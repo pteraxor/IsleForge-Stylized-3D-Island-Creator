@@ -1,0 +1,34 @@
+﻿<Page x:Class="Prototyping.WelcomePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:local="clr-namespace:Prototyping"
+      Title="WelcomePage">
+
+    <local:BaseLayout>
+        <local:BaseLayout.HeaderContent>
+            <TextBlock Text="Welcome" FontSize="20" FontWeight="Bold"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </local:BaseLayout.HeaderContent>
+
+        <local:BaseLayout.LeftContent>
+            <StackPanel>
+                <Button Content="New Project" Margin="5" Height="40"/>
+                <Button Content="Settings" Margin="5" Height="40"/>
+            </StackPanel>
+        </local:BaseLayout.LeftContent>
+
+        <!--<local:BaseLayout.FooterContent>-->
+            
+            <!-- no bottom buttons needed on first page-->
+        <!--</local:BaseLayout.FooterContent>-->
+
+        <local:BaseLayout.RightContent>
+            <Grid>
+                <Image Source="Resources/Logo400.png"
+               Width="400" Height="400"
+               HorizontalAlignment="Center"
+               VerticalAlignment="Center"/>
+            </Grid>
+        </local:BaseLayout.RightContent>
+    </local:BaseLayout>
+</Page>

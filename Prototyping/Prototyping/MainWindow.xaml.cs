@@ -23,6 +23,7 @@ namespace Prototyping
         public MainWindow()
         {
             InitializeComponent();
+            MainFrame.Navigate(new WelcomePage());
         }
     }
 }

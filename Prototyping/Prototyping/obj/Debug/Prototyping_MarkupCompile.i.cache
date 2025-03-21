@@ -10,11 +10,11 @@ none
 false
 DEBUG;TRACE
 C:\Users\JP\source\repos\Prototyping\Prototyping\App.xaml
-11151548125
+31951306335
 
-91790260177
+11-1760351854
 131569487696
-MainWindow.xaml;
+BaseLayout.xaml;MainWindow.xaml;WelcomePage.xaml;
 
-True
+False
 
