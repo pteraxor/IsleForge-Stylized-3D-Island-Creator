@@ -12,8 +12,8 @@
 
         <local:BaseLayout.LeftContent>
             <StackPanel>
-                <Button Content="New Project" Margin="5" Height="40"/>
-                <Button Content="Settings" Margin="5" Height="40"/>
+                <Button Content="New Project" Margin="5" Height="40" Click="Start_Project"/>
+                <Button Content="Settings" Margin="5" Height="40" Click="Settings_Page"/>
             </StackPanel>
         </local:BaseLayout.LeftContent>
 

@@ -23,19 +23,18 @@ namespace Prototyping
             InitializeComponent();
         }
 
-        //created this for template, but it is not needed on welcome page
-        /*
-        private void Back_Click(object sender, RoutedEventArgs e)
-        {          
-            // NavigationService.GoBack();
+
+        private void Start_Project(object sender, RoutedEventArgs e)
+        {
+            
+            NavigationService.Navigate(new BaseMapDrawingPage());
         }
         
 
-        private void Next_Click(object sender, RoutedEventArgs e)
+        private void Settings_Page(object sender, RoutedEventArgs e)
         {
-           // NavigationService.Navigate(new BaseMapCreationPage());
+           
         }
-        */
     }
 }
 

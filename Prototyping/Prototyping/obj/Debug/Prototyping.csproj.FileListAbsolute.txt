@@ -19,3 +19,9 @@ C:\Users\JP\source\repos\Prototyping\Prototyping\obj\Debug\GeneratedInternalType
 C:\Users\JP\source\repos\Prototyping\Prototyping\obj\Debug\Prototyping_MarkupCompile.lref
 C:\Users\JP\source\repos\Prototyping\Prototyping\obj\Debug\WelcomePage.baml
 C:\Users\JP\source\repos\Prototyping\Prototyping\obj\Debug\App.baml
+C:\Users\JP\source\repos\Prototyping\Prototyping\obj\Debug\BaseMapDrawingPage.g.cs
+C:\Users\JP\source\repos\Prototyping\Prototyping\obj\Debug\BaseMapDrawingPage.baml
+C:\Users\JP\source\repos\Prototyping\Prototyping\bin\Debug\WriteableBitmapEx.Wpf.dll
+C:\Users\JP\source\repos\Prototyping\Prototyping\bin\Debug\WriteableBitmapEx.Wpf.pdb
+C:\Users\JP\source\repos\Prototyping\Prototyping\bin\Debug\WriteableBitmapEx.Wpf.xml
+C:\Users\JP\source\repos\Prototyping\Prototyping\obj\Debug\Prototyping.csproj.CopyComplete
