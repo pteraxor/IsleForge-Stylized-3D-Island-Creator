@@ -12,6 +12,8 @@ namespace Prototyping.Tools
 {
     public class FreehandTool : IDrawingTool
     {
+        public Func<Point, bool> Mask { get; set; } = _ => true;
+
         private Point _lastPoint;
         private bool _isDrawing;
         private Color _color;
@@ -63,7 +65,8 @@ namespace Prototyping.Tools
                             py >= 0 && py < bitmap.PixelHeight &&
                             x * x + y * y <= radius * radius)
                         {
-                            bitmap.SetPixel(px, py, _color);
+                            ChangePixel(px, py, bitmap);
+                            //bitmap.SetPixel(px, py, _color);
                         }
                     }
                 }
@@ -92,6 +95,16 @@ namespace Prototyping.Tools
                 int e2 = 2 * err;
                 if (e2 > -dy) { err -= dy; x0 += sx; }
                 if (e2 < dx) { err += dx; y0 += sy; }
+            }
+        }
+
+        //moving the part that actually changes the pixel here, so that other parts of logic can be added
+        private void ChangePixel(int px, int py, WriteableBitmap bitmap)
+        {
+            //bitmap.SetPixel(px, py, _color);
+            if (Mask(new Point(px, py)))
+            {
+                bitmap.SetPixel(px, py, _color);
             }
         }
     }

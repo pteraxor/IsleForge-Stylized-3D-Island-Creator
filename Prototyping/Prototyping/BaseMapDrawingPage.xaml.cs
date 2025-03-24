@@ -44,10 +44,10 @@ namespace Prototyping
 
         private string _drawingMode = "Freehand";
         private string _stampShape = "Circle";
-        private bool _restrictToBaseLayer = true;
+        private bool _restrictToBaseLayer = false;
         private bool _isPreviewingStamp = false;
 
-
+        #region initialization
         private T FindElementByTag<T>(DependencyObject parent, string tag) where T : FrameworkElement
         {
             int count = VisualTreeHelper.GetChildrenCount(parent);
@@ -101,7 +101,7 @@ namespace Prototyping
                 PixelFormats.Bgra32,
                 null);
         }
-
+        #endregion
 
         #region canvas mouse behavior
 
@@ -135,15 +135,21 @@ namespace Prototyping
             Color color = _layerColors[_currentLayer];
             int brushSize = _drawingToolSize;
 
-            if (_drawingMode == "Freehand")
+
+            switch (_drawingMode)
             {
-                _activeTool = new FreehandTool(color, brushSize);
-                System.Diagnostics.Debug.WriteLine("Freehand tool initialized");
+                case "Freehand":
+                    _activeTool = new FreehandTool(color, brushSize);
+                    break;
+
+                // other tools will be here
+                default:
+                    _activeTool = new FreehandTool(color, brushSize); //this should be the default tool anyway
+                    break;
             }
-            else
-            {
-                _activeTool = null;
-            }
+     
+            _activeTool.Mask = GetCurrentMask(); //we update the mask anytime there are tool changes.
+
         }
 
         private void DrawingModeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -166,11 +172,62 @@ namespace Prototyping
         //temp buttons to match UI layout
         private void StampShapeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e) { }
 
-        private void RestrictToBaseLayerCheckbox_Checked(object sender, RoutedEventArgs e) { }
+        private void RestrictToBaseLayerCheckbox_Checked(object sender, RoutedEventArgs e)
+        {
+            var checkbox = sender as CheckBox;
+
+            _restrictToBaseLayer = checkbox?.IsChecked ?? false;
+
+            if (_activeTool != null)
+            {
+                _activeTool.Mask = GetCurrentMask();
+            }
+
+            Debug.WriteLine($"RestrictToBaseLayer: {_restrictToBaseLayer}");
+        } //when the checkbox changes, we send the mask and activate it. The mask is updated with tool changes, so it will keep up
+
+
+
+        private bool CanDrawOnlyOnBase(Point p)
+        {
+            if (_bitmap == null)
+                return false;
+
+            int x = (int)p.X;
+            int y = (int)p.Y;
+
+            if (x < 0 || y < 0 || x >= _bitmap.PixelWidth || y >= _bitmap.PixelHeight)
+                return false;
+
+            Color color = _bitmap.GetPixel(x, y);
+            return color == Colors.Red;
+        }
+
+        private Func<Point, bool> GetCurrentMask()
+        {
+            if (_restrictToBaseLayer && _currentLayer > 0)
+                return p => CanDrawOnlyOnBase(p);
+
+            return _ => true;
+        }
+
+
 
         private void ClearButton_Click(object sender, RoutedEventArgs e)
         {
             SaveState(); //start by saving the state for the undo
+
+            if (_bitmap == null) return; //a safety check
+
+            using (_bitmap.GetBitmapContext())
+            {
+                // Clear to transparent or white depending on your design
+                _bitmap.Clear(Colors.Transparent); // or Colors.White
+                _bitmap.AddDirtyRect(new Int32Rect(0, 0, _bitmap.PixelWidth, _bitmap.PixelHeight));
+            }
+
+            RefreshCanvas();
+
         }
 
 
