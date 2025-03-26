@@ -1,0 +1,89 @@
+﻿<Page x:Class="Prototyping.Pages.BaseMapDrawingPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:local="clr-namespace:Prototyping"
+      Title="Base Map Drawing">
+
+    <local:BaseLayout>
+        <!-- Header -->
+        <local:BaseLayout.HeaderContent>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <TextBlock Text="Base Map Drawing" FontSize="20" FontWeight="Bold"/>
+            </StackPanel>
+        </local:BaseLayout.HeaderContent>
+
+        <!-- Left Tools Panel -->
+        <local:BaseLayout.LeftContent>
+            <StackPanel>
+                <TextBlock Text="Mode:" Margin="0,5,0,0"/>
+                <ComboBox SelectionChanged="DrawingModeSelector_SelectionChanged" Tag="DrawingMode">
+                    <ComboBoxItem Content="Freehand" IsSelected="True"/>
+                    <ComboBoxItem Content="Stamp"/>
+                    <ComboBoxItem Content="Eraser"/>
+                    <ComboBoxItem Content="Paint Bucket"/>
+                </ComboBox>
+
+                <TextBlock Text="Stamp Shape:" Margin="0,10,0,0"/>
+                <ComboBox SelectionChanged="StampShapeSelector_SelectionChanged" Tag="StampShapeSelector">
+                    <ComboBoxItem Content="Circle" IsSelected="True"/>
+                    <ComboBoxItem Content="Square"/>
+                    <ComboBoxItem Content="Triangle"/>
+                    <ComboBoxItem Content="Hexagon"/>
+                </ComboBox>
+
+                <TextBlock Text="Brush Size:" Margin="0,10,0,0"/>
+                <Slider Minimum="1"
+                    Maximum="50"
+                    Value="10"
+                    Tag="BrushSize"
+                    ValueChanged="BrushSizeSlider_ValueChanged"/>
+
+                <TextBlock Text="Layer:" Margin="0,10,0,0"/>
+                <ComboBox SelectionChanged="LayerSelector_SelectionChanged" Tag="LayerSelector">
+                    <ComboBoxItem Content="Base (Red)" IsSelected="True"/>
+                    <ComboBoxItem Content="Middle (Green)"/>
+                    <ComboBoxItem Content="Top (Blue)"/>
+                </ComboBox>
+
+                <CheckBox  Content="Restrict to Base Layer" Tag="RestrictToBaseLayerCheckbox"
+                          IsChecked="False" Checked="RestrictToBaseLayerCheckbox_Checked" Unchecked="RestrictToBaseLayerCheckbox_Checked"/>
+
+                <Button Content="Undo" Margin="0,10,0,0" Click="UndoButton_Click" Tag="UndoButton"/>
+                <Button Content="Redo" Margin="0,5,0,0" Click="RedoButton_Click" Tag="RedoButton"/>
+                <Button Content="Clear" Margin="0,5,0,0" Click="ClearButton_Click"/>
+                <!-- Save Button -->
+                <Button Tag="SaveButton" Content="Save Canvas" Click="SaveButton_Click" Margin="15" />
+            </StackPanel>
+        </local:BaseLayout.LeftContent>
+
+        <!-- Footer Navigation -->
+        <local:BaseLayout.FooterContent>
+            <DockPanel HorizontalAlignment="Stretch">
+                <Grid HorizontalAlignment="Center" Width="250">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width=".25*"/>
+                        <ColumnDefinition Width=".75*"/>
+                        <ColumnDefinition Width=".75*"/>
+                        <ColumnDefinition Width=".25*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Button Content="Back" Margin="5" Grid.Column="1" Click="Back_Click"/>
+
+                    <Button Content="Next" Margin="5" Grid.Column="2" Click="Next_Click"/>
+                </Grid>
+            </DockPanel>
+        </local:BaseLayout.FooterContent>
+
+        <!-- Drawing Canvas -->
+        <local:BaseLayout.RightContent>
+            <Grid>
+                <Canvas Tag="DrawCanvas"
+                        Background="White"
+                        MouseDown="DrawCanvas_MouseDown"
+                        MouseMove="DrawCanvas_MouseMove"
+                        MouseUp="DrawCanvas_MouseUp"/>
+                <Canvas Tag="PreviewCanvas"/>
+            </Grid>
+        </local:BaseLayout.RightContent>
+    </local:BaseLayout>
+</Page>

@@ -13,17 +13,29 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 
-namespace Prototyping
+
+namespace Prototyping.Pages
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
-    public partial class MainWindow : Window
+    public partial class WelcomePage : Page
     {
-        public MainWindow()
+        public WelcomePage()
         {
             InitializeComponent();
-            MainFrame.Navigate(new Pages.WelcomePage());
+        }
+
+
+        private void Start_Project(object sender, RoutedEventArgs e)
+        {
+            
+            NavigationService.Navigate(new BaseMapDrawingPage());
+        }
+        
+
+        private void Settings_Page(object sender, RoutedEventArgs e)
+        {
+           
         }
     }
 }
+
+
