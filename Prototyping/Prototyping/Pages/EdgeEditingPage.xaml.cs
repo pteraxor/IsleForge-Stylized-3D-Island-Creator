@@ -49,6 +49,7 @@ namespace Prototyping.Pages
 
         private void EdgeEditingPage_Loaded(object sender, RoutedEventArgs e)
         {
+            //get all of the canvas information, and 
             _baseCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "BasemapCanvas");
             _drawCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "DrawCanvas");
             _baseLayer = BitmapManager.Get("BaseLayer");
@@ -69,8 +70,199 @@ namespace Prototyping.Pages
                 Debug.WriteLine("BaseLayer successfully added to canvas.");
             }
 
+            // adding the overlay stuff
+            var result = PerformEdgeDetectionOverlay(_baseLayer, 1); //get the overlay
+
+            WriteableBitmap overlay = result.Item1; //we get our overlay
+            HashSet<Point> edgeMask = result.Item2; //we get our overlay mask
+
+            // Show visual overlay
+            _baseCanvas.Children.Add(new Image
+            {
+                Source = overlay,
+                Width = overlay.PixelWidth,
+                Height = overlay.PixelHeight,
+                IsHitTestVisible = false
+            });
+
+            // Use as mask in tool
+            if (_activeTool != null)
+            {
+                _activeTool.Mask = delegate (Point p)
+                {
+                    return edgeMask.Contains(new Point((int)p.X, (int)p.Y));
+                };
+            }
 
         }
+
+
+        #region edge detection
+        private WriteableBitmap PerformEdgeDetectionOverlayOriginal(WriteableBitmap sourceBitmap, int edgeThickness = 2)
+        {
+            int width = sourceBitmap.PixelWidth;
+            int height = sourceBitmap.PixelHeight;
+
+            // Create a new bitmap for detected edges
+            WriteableBitmap edgeBitmap = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+
+            int[] kernelX = { -1, 0, 1, -2, 0, 2, -1, 0, 1 };
+            int[] kernelY = { -1, -2, -1, 0, 0, 0, 1, 2, 1 };
+
+            HashSet<Point> edgePoints = new HashSet<Point>();
+
+            using (var context = sourceBitmap.GetBitmapContext())
+            using (var edgeContext = edgeBitmap.GetBitmapContext())
+            {
+                for (int y = 1; y < height - 1; y++) // Avoid borders
+                {
+                    for (int x = 1; x < width - 1; x++)
+                    {
+                        int gradientX = 0;
+                        int gradientY = 0;
+                        int maxColorDifference = 0;
+
+                        // Process each kernel point
+                        for (int ky = -1; ky <= 1; ky++)
+                        {
+                            for (int kx = -1; kx <= 1; kx++)
+                            {
+                                Color pixelColor = sourceBitmap.GetPixel(x + kx, y + ky);
+                                int grayscale = (pixelColor.R + pixelColor.G + pixelColor.B) / 3; // Convert to grayscale
+
+                                int kernelIndex = (ky + 1) * 3 + (kx + 1);
+                                gradientX += grayscale * kernelX[kernelIndex];
+                                gradientY += grayscale * kernelY[kernelIndex];
+
+                                // Compute color differences in **all** channels
+                                int diffR = Math.Abs(pixelColor.R - sourceBitmap.GetPixel(x, y).R);
+                                int diffG = Math.Abs(pixelColor.G - sourceBitmap.GetPixel(x, y).G);
+                                int diffB = Math.Abs(pixelColor.B - sourceBitmap.GetPixel(x, y).B);
+
+                                // Use the largest color difference
+                                maxColorDifference = Math.Max(maxColorDifference, Math.Max(diffR, Math.Max(diffG, diffB)));
+                            }
+                        }
+
+                        // Compute gradient magnitude
+                        int magnitude = (int)Math.Sqrt(gradientX * gradientX + gradientY * gradientY);
+
+                        // Combine color edge detection and Sobel detection
+                        int combinedEdge = magnitude + maxColorDifference;
+
+                        // Set an adaptive threshold
+                        int adaptiveThreshold = 25; // Adjust for sensitivity
+                        if (combinedEdge > adaptiveThreshold)
+                        {
+                            edgePoints.Add(new Point(x, y)); // Store detected edge points
+                        }
+                    }
+                }
+
+                // Expand edges for thickness effect
+                foreach (var point in edgePoints)
+                {
+                    for (int yOffset = -edgeThickness; yOffset <= edgeThickness; yOffset++)
+                    {
+                        for (int xOffset = -edgeThickness; xOffset <= edgeThickness; xOffset++)
+                        {
+                            int newX = (int)point.X + xOffset;
+                            int newY = (int)point.Y + yOffset;
+
+                            if (newX >= 0 && newX < width && newY >= 0 && newY < height)
+                            {
+                                edgeBitmap.SetPixel(newX, newY, Colors.Black);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return edgeBitmap;
+        }
+
+        private Tuple<WriteableBitmap, HashSet<Point>> PerformEdgeDetectionOverlay(
+    WriteableBitmap sourceBitmap, int edgeThickness = 2)
+        {
+            int width = sourceBitmap.PixelWidth;
+            int height = sourceBitmap.PixelHeight;
+
+            WriteableBitmap edgeBitmap = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+            HashSet<Point> edgePoints = new HashSet<Point>();
+
+            int[] kernelX = { -1, 0, 1, -2, 0, 2, -1, 0, 1 };
+            int[] kernelY = { -1, -2, -1, 0, 0, 0, 1, 2, 1 };
+
+            using (var context = sourceBitmap.GetBitmapContext())
+            using (var edgeContext = edgeBitmap.GetBitmapContext())
+            {
+                for (int y = 1; y < height - 1; y++) // Avoid edges
+                {
+                    for (int x = 1; x < width - 1; x++)
+                    {
+                        int gradientX = 0;
+                        int gradientY = 0;
+                        int maxColorDifference = 0;
+
+                        for (int ky = -1; ky <= 1; ky++)
+                        {
+                            for (int kx = -1; kx <= 1; kx++)
+                            {
+                                int nx = x + kx;
+                                int ny = y + ky;
+                                Color pixelColor = sourceBitmap.GetPixel(nx, ny);
+                                int grayscale = (pixelColor.R + pixelColor.G + pixelColor.B) / 3;
+
+                                int kernelIndex = (ky + 1) * 3 + (kx + 1);
+                                gradientX += grayscale * kernelX[kernelIndex];
+                                gradientY += grayscale * kernelY[kernelIndex];
+
+                                Color center = sourceBitmap.GetPixel(x, y);
+                                int diffR = Math.Abs(pixelColor.R - center.R);
+                                int diffG = Math.Abs(pixelColor.G - center.G);
+                                int diffB = Math.Abs(pixelColor.B - center.B);
+
+                                maxColorDifference = Math.Max(maxColorDifference,
+                                    Math.Max(diffR, Math.Max(diffG, diffB)));
+                            }
+                        }
+
+                        int magnitude = (int)Math.Sqrt(gradientX * gradientX + gradientY * gradientY);
+                        int combinedEdge = magnitude + maxColorDifference;
+
+                        int threshold = 25; // Sensitivity
+                        if (combinedEdge > threshold)
+                        {
+                            edgePoints.Add(new Point(x, y));
+                        }
+                    }
+                }
+
+                // Expand edges to make them thicker and draw them
+                foreach (Point p in edgePoints.ToArray())
+                {
+                    for (int dy = -edgeThickness; dy <= edgeThickness; dy++)
+                    {
+                        for (int dx = -edgeThickness; dx <= edgeThickness; dx++)
+                        {
+                            int ex = (int)p.X + dx;
+                            int ey = (int)p.Y + dy;
+
+                            if (ex >= 0 && ex < width && ey >= 0 && ey < height)
+                            {
+                                edgeBitmap.SetPixel(ex, ey, Colors.Black);
+                                edgePoints.Add(new Point(ex, ey)); // Add expanded point to mask
+                            }
+                        }
+                    }
+                }
+            }
+
+            return Tuple.Create(edgeBitmap, edgePoints);
+        }
+
+
+        #endregion
 
 
 
