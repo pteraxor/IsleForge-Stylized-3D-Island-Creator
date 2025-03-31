@@ -1,0 +1,71 @@
+﻿<Page x:Class="Prototyping.Pages.EdgeEditingPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+      xmlns:local="clr-namespace:Prototyping"
+      mc:Ignorable="d" 
+      d:DesignHeight="450" d:DesignWidth="800"
+      Title="EdgeEditingPage">
+
+    <local:BaseLayout>
+        <!-- Header -->
+        <local:BaseLayout.HeaderContent>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <TextBlock Text="Edge Editing" FontSize="20" FontWeight="Bold"/>
+            </StackPanel>
+        </local:BaseLayout.HeaderContent>
+
+        <!-- Left Tools Panel -->
+        <local:BaseLayout.LeftContent>
+            <StackPanel>
+
+                <TextBlock Text="Brush Size:" Margin="0,10,0,0"/>
+                <Slider Minimum="1"
+                    Maximum="50"
+                    Value="10"
+                    Tag="BrushSize"
+                    ValueChanged="BrushSizeSlider_ValueChanged"/>
+
+                <TextBlock Text="Edge Style:" Margin="0,10,0,0"/>
+                <ComboBox SelectionChanged="EdgeStyleSelector_SelectionChanged" Tag="EdgeSelector">
+                    <ComboBoxItem Content="Sheer (Black)" IsSelected="True"/>
+                    <ComboBoxItem Content="Smooth ()"/>
+                    <ComboBoxItem Content="Slope ()"/>
+                </ComboBox>
+
+                <Button Tag="SaveButton" Content="Save Canvas" Click="SaveButton_Click" Margin="15" />
+            </StackPanel>
+        </local:BaseLayout.LeftContent>
+
+        <!-- Footer Navigation -->
+        <local:BaseLayout.FooterContent>
+            <DockPanel HorizontalAlignment="Stretch">
+                <Grid HorizontalAlignment="Center" Width="250">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width=".25*"/>
+                        <ColumnDefinition Width=".75*"/>
+                        <ColumnDefinition Width=".75*"/>
+                        <ColumnDefinition Width=".25*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Button Content="Back" Margin="5" Grid.Column="1" Click="Back_Click"/>
+
+                    <Button Content="Next" Margin="5" Grid.Column="2" Click="Next_Click"/>
+                </Grid>
+            </DockPanel>
+        </local:BaseLayout.FooterContent>
+
+        <!-- Drawing Canvas -->
+        <local:BaseLayout.RightContent>
+            <Grid>
+                <Canvas Tag="BasemapCanvas" Background="White"/>
+                <Canvas Tag="DrawCanvas"
+                    MouseDown="DrawCanvas_MouseDown"
+                    MouseMove="DrawCanvas_MouseMove"
+                    MouseUp="DrawCanvas_MouseUp"/>
+               
+            </Grid>
+        </local:BaseLayout.RightContent>
+    </local:BaseLayout>
+</Page>
