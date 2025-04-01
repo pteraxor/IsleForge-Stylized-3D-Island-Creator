@@ -39,15 +39,259 @@ namespace Prototyping.Pages
 
         private string _drawingMode = "Freehand";
 
+        private int _currentEdgeStyle = 0;
+        private readonly Color[] _edgeColors = {
+            Colors.Black,
+            Color.FromRgb(250, 140, 50), //an orange that stands out, for the blended edge
+            Color.FromRgb(100, 70, 180) //a purple that stands out for the other edge(might not be able to implement effectively)
+        };
+        private Func<Point, bool> _drawingMask;
 
         public EdgeEditingPage()
         {
             InitializeComponent();
-            this.Loaded += EdgeEditingPage_Loaded;
-
+            //this.Loaded += EdgeEditingPage_Loaded;
+            //this.Loaded += (s, e) => loadPause(); // cleaner
+            //loadPause();
+            Loaded += async (_, __) => await LoadPageAsync();
         }
 
-        private void EdgeEditingPage_Loaded(object sender, RoutedEventArgs e)
+        private async void loadPause()
+        {
+            await Task.Delay(100); // Let WPF fully render first
+
+            EdgeEditingPage_Loaded();
+        }
+
+        private async Task LoadPageAsync()
+        {
+            // Get UI-bound resources first
+            _baseCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "BasemapCanvas");
+            _drawCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "DrawCanvas");
+            _baseLayer = BitmapManager.Get("BaseLayer");
+
+            // Dimensions
+            int width = _baseLayer.PixelWidth;
+            int height = _baseLayer.PixelHeight;
+            int stride = width * 4;
+            byte[] pixelData = new byte[height * stride];
+            _baseLayer.CopyPixels(pixelData, stride, 0);
+
+            // Create overlay bitmap on UI thread
+            var overlay = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+
+            // Get progress bar
+            var progressBar = HelperExtensions.FindElementByTag<ProgressBar>(this, "EdgeProgressBar");
+            if (progressBar != null)
+            {
+                progressBar.Visibility = Visibility.Visible;
+                progressBar.Minimum = 0;
+                progressBar.Maximum = height;
+                progressBar.Value = 0;
+            }
+
+            // Run edge detection logic on background thread
+            HashSet<Point> edgeMask = await Task.Run(() =>
+            {
+                return PerformEdgeDetectionFromBytesIntoBitmap(pixelData, overlay, width, height, y =>
+                {
+                    progressBar?.Dispatcher.Invoke(() => progressBar.Value = y);
+                });
+            });
+
+            // Back on UI thread
+            if (progressBar != null)
+                progressBar.Visibility = Visibility.Collapsed;
+
+            // Add overlay to canvas
+            _drawCanvas.Children.Add(new Image
+            {
+                Source = overlay,
+                Width = width,
+                Height = height,
+                IsHitTestVisible = false
+            });
+
+            // Create and overlay editable drawing bitmap
+            _editLayer = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+
+            _editLayerImage = new Image
+            {
+                Source = _editLayer,
+                Width = width,
+                Height = height
+            };
+
+            _drawCanvas.Children.Add(_editLayerImage);
+            CopyBitmapInto(_editLayer, overlay); // black edges pre-filled
+
+            // Setup drawing
+            _drawingMask = p => edgeMask.Contains(new Point((int)p.X, (int)p.Y));
+            SetDrawingTool();
+        }
+
+        private HashSet<Point> PerformEdgeDetectionFromBytesIntoBitmap(
+    byte[] pixels,
+    WriteableBitmap targetBitmap,
+    int width,
+    int height,
+    Action<int> reportProgress)
+        {
+            HashSet<Point> edgePoints = new HashSet<Point>();
+            int[] kernelX = { -1, 0, 1, -2, 0, 2, -1, 0, 1 };
+            int[] kernelY = { -1, -2, -1, 0, 0, 0, 1, 2, 1 };
+            int stride = width * 4;
+
+            using (var context = targetBitmap.GetBitmapContext())
+            {
+                for (int y = 1; y < height - 1; y++)
+                {
+                    for (int x = 1; x < width - 1; x++)
+                    {
+                        int gradientX = 0;
+                        int gradientY = 0;
+                        int maxDiff = 0;
+
+                        for (int ky = -1; ky <= 1; ky++)
+                        {
+                            for (int kx = -1; kx <= 1; kx++)
+                            {
+                                int nx = x + kx;
+                                int ny = y + ky;
+                                int i = ny * stride + nx * 4;
+
+                                byte r = pixels[i + 2];
+                                byte g = pixels[i + 1];
+                                byte b = pixels[i];
+
+                                int gray = (r + g + b) / 3;
+                                int kernelIndex = (ky + 1) * 3 + (kx + 1);
+                                gradientX += gray * kernelX[kernelIndex];
+                                gradientY += gray * kernelY[kernelIndex];
+
+                                // compare to center pixel
+                                int centerIndex = y * stride + x * 4;
+                                byte cr = pixels[centerIndex + 2];
+                                byte cg = pixels[centerIndex + 1];
+                                byte cb = pixels[centerIndex];
+
+                                maxDiff = Math.Max(maxDiff,
+                                    Math.Max(Math.Abs(r - cr), Math.Max(Math.Abs(g - cg), Math.Abs(b - cb))));
+                            }
+                        }
+
+                        int magnitude = (int)Math.Sqrt(gradientX * gradientX + gradientY * gradientY);
+                        int combined = magnitude + maxDiff;
+
+                        if (combined > 25)
+                            edgePoints.Add(new Point(x, y));
+                    }
+
+                    reportProgress?.Invoke(y);
+                }
+
+                // Expand and draw onto the target bitmap
+                foreach (Point p in edgePoints.ToArray())
+                {
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int ex = (int)p.X + dx;
+                            int ey = (int)p.Y + dy;
+
+                            if (ex >= 0 && ex < width && ey >= 0 && ey < height)
+                            {
+                                targetBitmap.SetPixel(ex, ey, Colors.Black);
+                                edgePoints.Add(new Point(ex, ey));
+                            }
+                        }
+                    }
+                }
+            }
+
+            return edgePoints;
+        }
+
+
+
+        private async Task LoadPageAsync2()
+        {
+            // Canvas and base layer
+            _baseCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "BasemapCanvas");
+            _drawCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "DrawCanvas");
+            _baseLayer = BitmapManager.Get("BaseLayer");
+
+            // Progress bar
+            var progressBar = HelperExtensions.FindElementByTag<ProgressBar>(this, "EdgeProgressBar");
+            if (progressBar != null)
+            {
+                progressBar.Visibility = Visibility.Visible;
+                progressBar.Minimum = 0;
+                progressBar.Maximum = _baseLayer.PixelHeight;
+                progressBar.Value = 0;
+            }
+
+            // Extract pixels (on UI thread)
+            int width = _baseLayer.PixelWidth;
+            int height = _baseLayer.PixelHeight;
+            int stride = width * 4;
+            byte[] pixelData = new byte[height * stride];
+            _baseLayer.CopyPixels(pixelData, stride, 0);
+
+            // Run detection on background thread
+            var result = await Task.Run(() =>
+                PerformEdgeDetectionFromBytes(pixelData, width, height, y =>
+                    progressBar?.Dispatcher.Invoke(() => progressBar.Value = y))
+            );
+            
+
+            var overlay = result.Item1;
+            var edgeMask = result.Item2;
+
+            // Hide progress bar
+            if (progressBar != null)
+                progressBar.Visibility = Visibility.Collapsed;
+            
+            // Continue drawing setup...
+            _drawingMask = p => true; // allows drawing anywhere by default
+            _drawCanvas.Children.Add(new Image
+            {
+                Source = overlay,
+                Width = overlay.PixelWidth,
+                Height = overlay.PixelHeight,
+                IsHitTestVisible = false
+            });
+
+            return;
+
+            // Create the drawing layer
+            _editLayer = new WriteableBitmap(
+                _baseLayer.PixelWidth,
+                _baseLayer.PixelHeight,
+                96, 96,
+                PixelFormats.Bgra32,
+                null);
+
+            _editLayerImage = new Image
+            {
+                Source = _editLayer,
+                Width = _editLayer.PixelWidth,
+                Height = _editLayer.PixelHeight
+            };
+
+            _drawCanvas.Children.Add(_editLayerImage);
+            CopyBitmapInto(_editLayer, overlay);
+
+
+            _drawingMask = p => edgeMask.Contains(new Point((int)p.X, (int)p.Y));
+
+            SetDrawingTool();
+        }
+
+
+        //private void EdgeEditingPage_Loaded(object sender, RoutedEventArgs e)
+        private void EdgeEditingPage_Loaded()
         {
             //get all of the canvas information, and 
             _baseCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "BasemapCanvas");
@@ -70,12 +314,25 @@ namespace Prototyping.Pages
                 Debug.WriteLine("BaseLayer successfully added to canvas.");
             }
 
+            //progress bar
+            ProgressBar edgeProgressBar = HelperExtensions.FindElementByTag<ProgressBar>(this, "EdgeProgressBar");
+
+            if (edgeProgressBar != null)
+            {
+                edgeProgressBar.Visibility = Visibility.Visible;
+            }
             // adding the overlay stuff
-            var result = PerformEdgeDetectionOverlay(_baseLayer, 1); //get the overlay
+            //var result = PerformEdgeDetectionOverlay(_baseLayer, 1); //get the overlay
+
+            // with progress bar
+            var result = PerformEdgeDetectionOverlay(_baseLayer, 1, edgeProgressBar);
 
             WriteableBitmap overlay = result.Item1; //we get our overlay
             HashSet<Point> edgeMask = result.Item2; //we get our overlay mask
+            _drawingMask = p => true; // allows drawing anywhere by default
 
+
+            /*
             // Show visual overlay
             _baseCanvas.Children.Add(new Image
             {
@@ -93,11 +350,208 @@ namespace Prototyping.Pages
                     return edgeMask.Contains(new Point((int)p.X, (int)p.Y));
                 };
             }
+            */
+            _drawCanvas.Children.Add(new Image
+            {
+                Source = overlay,
+                Width = overlay.PixelWidth,
+                Height = overlay.PixelHeight,
+                IsHitTestVisible = false
+            });
+
+            // Create the drawing layer
+            _editLayer = new WriteableBitmap(
+                _baseLayer.PixelWidth,
+                _baseLayer.PixelHeight,
+                96, 96,
+                PixelFormats.Bgra32,
+                null);
+
+            _editLayerImage = new Image
+            {
+                Source = _editLayer,
+                Width = _editLayer.PixelWidth,
+                Height = _editLayer.PixelHeight
+            };
+
+            _drawCanvas.Children.Add(_editLayerImage);
+            CopyBitmapInto(_editLayer, overlay);
+
+
+            _drawingMask = p => edgeMask.Contains(new Point((int)p.X, (int)p.Y));
+
+            //Call tool setup here
+            //SetDrawingTool(p => edgeMask.Contains(new Point((int)p.X, (int)p.Y)));
+            SetDrawingTool();
 
         }
 
+        #region overlay helper
+
+        private void CopyBitmapInto(WriteableBitmap target, WriteableBitmap source)
+        {
+            int width = Math.Min(target.PixelWidth, source.PixelWidth);
+            int height = Math.Min(target.PixelHeight, source.PixelHeight);
+
+            using (var targetContext = target.GetBitmapContext())
+            using (var sourceContext = source.GetBitmapContext())
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        Color color = source.GetPixel(x, y);
+                        target.SetPixel(x, y, color);
+                    }
+                }
+            }
+        }
+
+
+        #endregion
+
 
         #region edge detection
+
+        private Tuple<WriteableBitmap, HashSet<Point>> PerformEdgeDetectionFromBytes(
+    byte[] pixels, int width, int height, Action<int> reportProgress = null, int edgeThickness = 2)
+        {
+            WriteableBitmap edgeBitmap = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+            HashSet<Point> edgePoints = new HashSet<Point>();
+
+            int[] kernelX = { -1, 0, 1, -2, 0, 2, -1, 0, 1 };
+            int[] kernelY = { -1, -2, -1, 0, 0, 0, 1, 2, 1 };
+            int stride = width * 4;
+
+            using (var edgeContext = edgeBitmap.GetBitmapContext())
+            {
+                for (int y = 1; y < height - 1; y++)
+                {
+                    for (int x = 1; x < width - 1; x++)
+                    {
+                        int gradientX = 0;
+                        int gradientY = 0;
+                        int maxColorDifference = 0;
+
+                        for (int ky = -1; ky <= 1; ky++)
+                        {
+                            for (int kx = -1; kx <= 1; kx++)
+                            {
+                                int nx = x + kx;
+                                int ny = y + ky;
+                                int ni = ny * stride + nx * 4;
+
+                                byte r = pixels[ni + 2];
+                                byte g = pixels[ni + 1];
+                                byte b = pixels[ni + 0];
+
+                                int grayscale = (r + g + b) / 3;
+
+                                int kernelIndex = (ky + 1) * 3 + (kx + 1);
+                                gradientX += grayscale * kernelX[kernelIndex];
+                                gradientY += grayscale * kernelY[kernelIndex];
+
+                                // Central pixel for diff comparison
+                                int ci = y * stride + x * 4;
+                                byte cr = pixels[ci + 2];
+                                byte cg = pixels[ci + 1];
+                                byte cb = pixels[ci + 0];
+
+                                int diffR = Math.Abs(r - cr);
+                                int diffG = Math.Abs(g - cg);
+                                int diffB = Math.Abs(b - cb);
+
+                                maxColorDifference = Math.Max(maxColorDifference, Math.Max(diffR, Math.Max(diffG, diffB)));
+                            }
+                        }
+
+                        int magnitude = (int)Math.Sqrt(gradientX * gradientX + gradientY * gradientY);
+                        int combined = magnitude + maxColorDifference;
+
+                        if (combined > 25)
+                        {
+                            edgePoints.Add(new Point(x, y));
+                        }
+                    }
+
+                    reportProgress?.Invoke(y);
+                }
+
+                // Draw thick edges
+                foreach (var point in edgePoints.ToArray())
+                {
+                    for (int dy = -edgeThickness; dy <= edgeThickness; dy++)
+                    {
+                        for (int dx = -edgeThickness; dx <= edgeThickness; dx++)
+                        {
+                            int px = (int)point.X + dx;
+                            int py = (int)point.Y + dy;
+
+                            if (px >= 0 && px < width && py >= 0 && py < height)
+                            {
+                                edgeBitmap.SetPixel(px, py, Colors.Black);
+                                edgePoints.Add(new Point(px, py));
+                            }
+                        }
+                    }
+                }
+            }
+
+            return Tuple.Create(edgeBitmap, edgePoints);
+        }
+
+
+        private Tuple<WriteableBitmap, HashSet<Point>> PerformEdgeDetectionOverlay(
+    WriteableBitmap sourceBitmap,
+    int edgeThickness,
+    Action<int> reportProgress)
+        {
+            int width = sourceBitmap.PixelWidth;
+            int height = sourceBitmap.PixelHeight;
+
+            WriteableBitmap edgeBitmap = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+            HashSet<Point> edgePoints = new HashSet<Point>();
+
+            int[] kernelX = { -1, 0, 1, -2, 0, 2, -1, 0, 1 };
+            int[] kernelY = { -1, -2, -1, 0, 0, 0, 1, 2, 1 };
+
+            using (var context = sourceBitmap.GetBitmapContext())
+            using (var edgeContext = edgeBitmap.GetBitmapContext())
+            {
+                for (int y = 1; y < height - 1; y++)
+                {
+                    for (int x = 1; x < width - 1; x++)
+                    {
+                        // edge detection logic (unchanged)
+                    }
+
+                    reportProgress?.Invoke(y);
+                }
+
+                // Expand edges to make them thicker and draw them
+                foreach (Point p in edgePoints.ToArray())
+                {
+                    for (int dy = -edgeThickness; dy <= edgeThickness; dy++)
+                    {
+                        for (int dx = -edgeThickness; dx <= edgeThickness; dx++)
+                        {
+                            int ex = (int)p.X + dx;
+                            int ey = (int)p.Y + dy;
+
+                            if (ex >= 0 && ex < width && ey >= 0 && ey < height)
+                            {
+                                edgeBitmap.SetPixel(ex, ey, Colors.Black);
+                                edgePoints.Add(new Point(ex, ey)); // Add expanded point to mask
+                            }
+                        }
+                    }
+                }
+            }
+
+            return Tuple.Create(edgeBitmap, edgePoints);
+        }
+
+
         private WriteableBitmap PerformEdgeDetectionOverlayOriginal(WriteableBitmap sourceBitmap, int edgeThickness = 2)
         {
             int width = sourceBitmap.PixelWidth;
@@ -261,10 +715,140 @@ namespace Prototyping.Pages
             return Tuple.Create(edgeBitmap, edgePoints);
         }
 
+        private Tuple<WriteableBitmap, HashSet<Point>> PerformEdgeDetectionOverlay(
+    WriteableBitmap sourceBitmap,
+    int edgeThickness,
+    ProgressBar progressBar) // <-- progress bar support
+        {
+            int width = sourceBitmap.PixelWidth;
+            int height = sourceBitmap.PixelHeight;
+
+            WriteableBitmap edgeBitmap = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+            HashSet<Point> edgePoints = new HashSet<Point>();
+
+            int[] kernelX = { -1, 0, 1, -2, 0, 2, -1, 0, 1 };
+            int[] kernelY = { -1, -2, -1, 0, 0, 0, 1, 2, 1 };
+
+            if (progressBar != null)
+            {
+                progressBar.Minimum = 0;
+                progressBar.Maximum = height - 2;
+                progressBar.Value = 0;
+                progressBar.Visibility = Visibility.Visible;
+            }
+
+            using (var context = sourceBitmap.GetBitmapContext())
+            using (var edgeContext = edgeBitmap.GetBitmapContext())
+            {
+                for (int y = 1; y < height - 1; y++) // Avoid edges
+                {
+                    for (int x = 1; x < width - 1; x++)
+                    {
+                        int gradientX = 0;
+                        int gradientY = 0;
+                        int maxColorDifference = 0;
+
+                        for (int ky = -1; ky <= 1; ky++)
+                        {
+                            for (int kx = -1; kx <= 1; kx++)
+                            {
+                                int nx = x + kx;
+                                int ny = y + ky;
+                                Color pixelColor = sourceBitmap.GetPixel(nx, ny);
+                                int grayscale = (pixelColor.R + pixelColor.G + pixelColor.B) / 3;
+
+                                int kernelIndex = (ky + 1) * 3 + (kx + 1);
+                                gradientX += grayscale * kernelX[kernelIndex];
+                                gradientY += grayscale * kernelY[kernelIndex];
+
+                                Color center = sourceBitmap.GetPixel(x, y);
+                                int diffR = Math.Abs(pixelColor.R - center.R);
+                                int diffG = Math.Abs(pixelColor.G - center.G);
+                                int diffB = Math.Abs(pixelColor.B - center.B);
+
+                                maxColorDifference = Math.Max(maxColorDifference,
+                                    Math.Max(diffR, Math.Max(diffG, diffB)));
+                            }
+                        }
+
+                        int magnitude = (int)Math.Sqrt(gradientX * gradientX + gradientY * gradientY);
+                        int combinedEdge = magnitude + maxColorDifference;
+
+                        int threshold = 25;
+                        if (combinedEdge > threshold)
+                        {
+                            edgePoints.Add(new Point(x, y));
+                        }
+                    }
+
+                    // Update progress bar after each row
+                    if (progressBar != null)
+                    {
+                        Debug.WriteLine($"Tried updating bar: {y}");
+                        //progressBar.Value = y;
+                        int currentY = y;
+                        progressBar.Dispatcher.Invoke(() =>
+                        {
+                            progressBar.Value = currentY;
+                        }, System.Windows.Threading.DispatcherPriority.Background);
+                    }
+                }
+
+                // Expand edges and mark on the overlay
+                foreach (Point p in edgePoints.ToArray())
+                {
+                    for (int dy = -edgeThickness; dy <= edgeThickness; dy++)
+                    {
+                        for (int dx = -edgeThickness; dx <= edgeThickness; dx++)
+                        {
+                            int ex = (int)p.X + dx;
+                            int ey = (int)p.Y + dy;
+
+                            if (ex >= 0 && ex < width && ey >= 0 && ey < height)
+                            {
+                                edgeBitmap.SetPixel(ex, ey, Colors.Black);
+                                edgePoints.Add(new Point(ex, ey));
+                            }
+                        }
+                    }
+                }
+
+                if (progressBar != null)
+                {
+                    progressBar.Value = progressBar.Maximum;
+                    progressBar.Visibility = Visibility.Collapsed;
+                }
+            }
+
+            return Tuple.Create(edgeBitmap, edgePoints);
+        }
+
 
         #endregion
 
+        #region drawing tools
 
+
+        private void SetDrawingTool()
+        {
+            Color paintColor = _edgeColors[_currentEdgeStyle];
+            int brushSize = _drawingToolSize;
+
+            switch (_drawingMode)
+            {
+                case "Freehand":
+                    _activeTool = new FreehandTool(paintColor, brushSize);
+                    break;
+                // Add more tools later
+                default:
+                    _activeTool = new FreehandTool(paintColor, brushSize);
+                    break;
+            }
+
+            _activeTool.Mask = _drawingMask; // always uses the current stored mask
+        }
+
+        #endregion
 
         #region canvas mouse behavior
 
@@ -289,6 +873,31 @@ namespace Prototyping.Pages
         {
             Point pos = e.GetPosition(_drawCanvas);
             _activeTool?.OnMouseUp(pos, _editLayer);
+        }
+        #endregion
+
+        #region UI event parameter changes
+        private void EdgeStyleSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            var comboBox = sender as ComboBox;
+            int selectedIndex = comboBox?.SelectedIndex ?? 0;
+
+            _currentEdgeStyle = selectedIndex;
+
+            Debug.WriteLine($"Layer changed to {_currentEdgeStyle}");
+
+            // Recreate the tool with the new color
+            SetDrawingTool();
+        }
+
+        private void BrushSizeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            _drawingToolSize = (int)e.NewValue;
+
+            //recreate the active tool with the new size
+            SetDrawingTool();
+
+            Debug.WriteLine($"Brush size changed to {_drawingToolSize}");
         }
         #endregion
 
@@ -387,7 +996,7 @@ namespace Prototyping.Pages
         {
             // Create a BitmapEncoder to save the WriteableBitmap
             var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(_baseLayer));
+            encoder.Frames.Add(BitmapFrame.Create(_editLayer));
 
             // Save to the specified file
             using (var fileStream = new System.IO.FileStream(filePath, System.IO.FileMode.Create))
