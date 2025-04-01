@@ -47,6 +47,8 @@ namespace Prototyping.Pages
         };
         private Func<Point, bool> _drawingMask;
 
+        private const int TargetResolution = 250; //for the exporting of the data
+
         public EdgeEditingPage()
         {
             InitializeComponent();
@@ -85,25 +87,6 @@ namespace Prototyping.Pages
             _drawingMask = p => true; // allows drawing anywhere by default
 
 
-            /*
-            // Show visual overlay
-            _baseCanvas.Children.Add(new Image
-            {
-                Source = overlay,
-                Width = overlay.PixelWidth,
-                Height = overlay.PixelHeight,
-                IsHitTestVisible = false
-            });
-
-            // Use as mask in tool
-            if (_activeTool != null)
-            {
-                _activeTool.Mask = delegate (Point p)
-                {
-                    return edgeMask.Contains(new Point((int)p.X, (int)p.Y));
-                };
-            }
-            */
             _drawCanvas.Children.Add(new Image
             {
                 Source = overlay,
@@ -164,90 +147,9 @@ namespace Prototyping.Pages
         #endregion
 
 
+
         #region edge detection
 
-        private WriteableBitmap PerformEdgeDetectionOverlayOriginal(WriteableBitmap sourceBitmap, int edgeThickness = 2)
-        {
-            int width = sourceBitmap.PixelWidth;
-            int height = sourceBitmap.PixelHeight;
-
-            // Create a new bitmap for detected edges
-            WriteableBitmap edgeBitmap = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
-
-            int[] kernelX = { -1, 0, 1, -2, 0, 2, -1, 0, 1 };
-            int[] kernelY = { -1, -2, -1, 0, 0, 0, 1, 2, 1 };
-
-            HashSet<Point> edgePoints = new HashSet<Point>();
-
-            using (var context = sourceBitmap.GetBitmapContext())
-            using (var edgeContext = edgeBitmap.GetBitmapContext())
-            {
-                for (int y = 1; y < height - 1; y++) // Avoid borders
-                {
-                    for (int x = 1; x < width - 1; x++)
-                    {
-                        int gradientX = 0;
-                        int gradientY = 0;
-                        int maxColorDifference = 0;
-
-                        // Process each kernel point
-                        for (int ky = -1; ky <= 1; ky++)
-                        {
-                            for (int kx = -1; kx <= 1; kx++)
-                            {
-                                Color pixelColor = sourceBitmap.GetPixel(x + kx, y + ky);
-                                int grayscale = (pixelColor.R + pixelColor.G + pixelColor.B) / 3; // Convert to grayscale
-
-                                int kernelIndex = (ky + 1) * 3 + (kx + 1);
-                                gradientX += grayscale * kernelX[kernelIndex];
-                                gradientY += grayscale * kernelY[kernelIndex];
-
-                                // Compute color differences in **all** channels
-                                int diffR = Math.Abs(pixelColor.R - sourceBitmap.GetPixel(x, y).R);
-                                int diffG = Math.Abs(pixelColor.G - sourceBitmap.GetPixel(x, y).G);
-                                int diffB = Math.Abs(pixelColor.B - sourceBitmap.GetPixel(x, y).B);
-
-                                // Use the largest color difference
-                                maxColorDifference = Math.Max(maxColorDifference, Math.Max(diffR, Math.Max(diffG, diffB)));
-                            }
-                        }
-
-                        // Compute gradient magnitude
-                        int magnitude = (int)Math.Sqrt(gradientX * gradientX + gradientY * gradientY);
-
-                        // Combine color edge detection and Sobel detection
-                        int combinedEdge = magnitude + maxColorDifference;
-
-                        // Set an adaptive threshold
-                        int adaptiveThreshold = 25; // Adjust for sensitivity
-                        if (combinedEdge > adaptiveThreshold)
-                        {
-                            edgePoints.Add(new Point(x, y)); // Store detected edge points
-                        }
-                    }
-                }
-
-                // Expand edges for thickness effect
-                foreach (var point in edgePoints)
-                {
-                    for (int yOffset = -edgeThickness; yOffset <= edgeThickness; yOffset++)
-                    {
-                        for (int xOffset = -edgeThickness; xOffset <= edgeThickness; xOffset++)
-                        {
-                            int newX = (int)point.X + xOffset;
-                            int newY = (int)point.Y + yOffset;
-
-                            if (newX >= 0 && newX < width && newY >= 0 && newY < height)
-                            {
-                                edgeBitmap.SetPixel(newX, newY, Colors.Black);
-                            }
-                        }
-                    }
-                }
-            }
-
-            return edgeBitmap;
-        }
 
         private Tuple<WriteableBitmap, HashSet<Point>> PerformEdgeDetectionOverlay(
     WriteableBitmap sourceBitmap, int edgeThickness = 2)
@@ -332,8 +234,87 @@ namespace Prototyping.Pages
 
         #endregion
 
+        #region text conversion
+        private void ProcessMap_Click(object sender, RoutedEventArgs e)
+        {
+            // Step 1: Resample to target size
+            WriteableBitmap resizedBase = BitmapManager.ResizeBitmap(_baseLayer, TargetResolution, TargetResolution);
+            WriteableBitmap resizedEdit = BitmapManager.ResizeBitmap(_editLayer, TargetResolution, TargetResolution);
+
+            float[,] baseLayer = new float[TargetResolution, TargetResolution];
+            float[,] midLayer = new float[TargetResolution, TargetResolution];
+            float[,] topLayer = new float[TargetResolution, TargetResolution];
+            float[,] edgeLayer = new float[TargetResolution, TargetResolution];
+
+            using (var baseContext = resizedBase.GetBitmapContext())
+            using (var editContext = resizedEdit.GetBitmapContext())
+            {
+                for (int y = 0; y < TargetResolution; y++)
+                {
+                    for (int x = 0; x < TargetResolution; x++)
+                    {
+                        Color basePixel = resizedBase.GetPixel(x, y);
+
+                        if (basePixel.R > basePixel.G && basePixel.R > basePixel.B)
+                            baseLayer[x, y] = 1f;
+                        else if (basePixel.G > basePixel.R && basePixel.G > basePixel.B)
+                            midLayer[x, y] = 1f;
+                        else if (basePixel.B > basePixel.R && basePixel.B > basePixel.G)
+                            topLayer[x, y] = 1f;
+
+                        Color edgePixel = resizedEdit.GetPixel(x, y);
+
+                        if (edgePixel == Colors.Black)
+                            edgeLayer[x, y] = 1f;
+                        else if (edgePixel == Color.FromRgb(250, 140, 50))
+                            edgeLayer[x, y] = 2f;
+                        else if (edgePixel == Color.FromRgb(100, 70, 180))
+                            edgeLayer[x, y] = 3f;
+                        else
+                            edgeLayer[x, y] = 0f; // transparent or unmarked
+                    }
+                }
+            }
+
+            // Store for next page
+            MapDataStore.BaseLayer = baseLayer;
+            MapDataStore.MidLayer = midLayer;
+            MapDataStore.TopLayer = topLayer;
+            MapDataStore.EdgeLayer = edgeLayer;
+
+            // Optional: export for inspection
+            ExportLayerToText("BaseLayer.txt", baseLayer);
+            ExportLayerToText("MidLayer.txt", midLayer);
+            ExportLayerToText("TopLayer.txt", topLayer);
+            ExportLayerToText("EdgeLayer.txt", edgeLayer);
+
+            MessageBox.Show("Processing complete!");
+        }
+
+        private void ExportLayerToText(string filename, float[,] data)
+        {
+            var sb = new StringBuilder();
+
+            int width = data.GetLength(0);
+            int height = data.GetLength(1);
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    sb.Append(data[x, y].ToString("0.0")).Append(" ");
+                }
+                sb.AppendLine();
+            }
+
+            System.IO.File.WriteAllText(filename, sb.ToString());
+        }
+
+
+        #endregion
+
         #region drawing tools
-   
+
 
         private void SetDrawingTool()
         {
@@ -477,7 +458,7 @@ namespace Prototyping.Pages
         private void Next_Click(object sender, RoutedEventArgs e)
         {
             //for when it's time to to the next step. need to consider how to check for when it's okay to do so
-           
+
         }
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)

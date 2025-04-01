@@ -19,6 +19,8 @@
         <!-- Left Tools Panel -->
         <local:BaseLayout.LeftContent>
             <StackPanel>
+                
+
 
                 <TextBlock Text="Brush Size:" Margin="0,10,0,0"/>
                 <Slider Minimum="1"
@@ -34,7 +36,19 @@
                     <ComboBoxItem Content="Slope ()"/>
                 </ComboBox>
 
+                <Button Content="Undo" Margin="0,10,0,0" Click="UndoButton_Click" Tag="UndoButton"/>
+                <Button Content="Redo" Margin="0,5,0,0" Click="RedoButton_Click" Tag="RedoButton"/>
+                <!--<Button Content="Clear" Margin="0,5,0,0" Click="ClearButton_Click"/> -->
+
+                <Button Content="Process Map" Margin="0,15,0,0" Click="ProcessMap_Click"/>
+
                 <Button Tag="SaveButton" Content="Save Canvas" Click="SaveButton_Click" Margin="15" />
+                <ProgressBar Tag="EdgeProgressBar"
+                 Minimum="0" Maximum="100"
+                 Height="20"
+                 Visibility="Visible"
+                 Margin="10"/>
+                
             </StackPanel>
         </local:BaseLayout.LeftContent>
 
@@ -59,11 +73,13 @@
         <!-- Drawing Canvas -->
         <local:BaseLayout.RightContent>
             <Grid>
+                
                 <Canvas Tag="BasemapCanvas" Background="White"/>
                 <Canvas Tag="DrawCanvas"
                     MouseDown="DrawCanvas_MouseDown"
                     MouseMove="DrawCanvas_MouseMove"
                     MouseUp="DrawCanvas_MouseUp"/>
+                
                
             </Grid>
         </local:BaseLayout.RightContent>
