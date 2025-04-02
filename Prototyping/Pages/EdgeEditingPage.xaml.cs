@@ -47,7 +47,7 @@ namespace Prototyping.Pages
         };
         private Func<Point, bool> _drawingMask;
 
-        private const int TargetResolution = 250; //for the exporting of the data
+        private const int TargetResolution = 600; //for the exporting of the data
 
         public EdgeEditingPage()
         {
@@ -245,6 +245,7 @@ namespace Prototyping.Pages
             float[,] midLayer = new float[TargetResolution, TargetResolution];
             float[,] topLayer = new float[TargetResolution, TargetResolution];
             float[,] edgeLayer = new float[TargetResolution, TargetResolution];
+            float[,] footprint = new float[TargetResolution, TargetResolution];
 
             using (var baseContext = resizedBase.GetBitmapContext())
             using (var editContext = resizedEdit.GetBitmapContext())
@@ -256,11 +257,23 @@ namespace Prototyping.Pages
                         Color basePixel = resizedBase.GetPixel(x, y);
 
                         if (basePixel.R > basePixel.G && basePixel.R > basePixel.B)
+                        {
                             baseLayer[x, y] = 1f;
+                            footprint[x, y] = 1f;
+                        }                            
                         else if (basePixel.G > basePixel.R && basePixel.G > basePixel.B)
+                        {
+                            baseLayer[x, y] = 1f; //base layer is everything
                             midLayer[x, y] = 1f;
+                            footprint[x, y] = 1f;
+                        }                            
                         else if (basePixel.B > basePixel.R && basePixel.B > basePixel.G)
+                        {
+                            baseLayer[x, y] = 1f;
                             topLayer[x, y] = 1f;
+                            footprint[x, y] = 1f;
+                        }
+                            
 
                         Color edgePixel = resizedEdit.GetPixel(x, y);
 
@@ -281,12 +294,14 @@ namespace Prototyping.Pages
             MapDataStore.MidLayer = midLayer;
             MapDataStore.TopLayer = topLayer;
             MapDataStore.EdgeLayer = edgeLayer;
+            MapDataStore.FootPrint = footprint;
 
-            // Optional: export for inspection
+            //temp: export for inspection
             ExportLayerToText("BaseLayer.txt", baseLayer);
             ExportLayerToText("MidLayer.txt", midLayer);
             ExportLayerToText("TopLayer.txt", topLayer);
             ExportLayerToText("EdgeLayer.txt", edgeLayer);
+            ExportLayerToText("Footprint.txt", footprint);
 
             MessageBox.Show("Processing complete!");
         }
@@ -458,7 +473,7 @@ namespace Prototyping.Pages
         private void Next_Click(object sender, RoutedEventArgs e)
         {
             //for when it's time to to the next step. need to consider how to check for when it's okay to do so
-
+            this.NavigationService?.Navigate(new HeightMapMaker());
         }
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)

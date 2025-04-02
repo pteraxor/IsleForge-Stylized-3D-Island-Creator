@@ -1,4 +1,4 @@
-﻿<Page x:Class="Prototyping.Pages.EdgeEditingPage"
+﻿<Page x:Class="Prototyping.Pages.HeightMapMaker"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
@@ -6,49 +6,28 @@
       xmlns:local="clr-namespace:Prototyping"
       mc:Ignorable="d" 
       d:DesignHeight="450" d:DesignWidth="800"
-      Title="EdgeEditingPage">
+      Title="HeightMapMaker">
 
     <local:BaseLayout>
         <!-- Header -->
         <local:BaseLayout.HeaderContent>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                <TextBlock Text="Edge Editing" FontSize="20" FontWeight="Bold"/>
+                <TextBlock Text="Height Map" FontSize="20" FontWeight="Bold"/>
             </StackPanel>
         </local:BaseLayout.HeaderContent>
 
         <!-- Left Tools Panel -->
         <local:BaseLayout.LeftContent>
             <StackPanel>
-                
-
-
-                <TextBlock Text="Brush Size:" Margin="0,10,0,0"/>
-                <Slider Minimum="1"
-                    Maximum="50"
-                    Value="10"
-                    Tag="BrushSize"
-                    ValueChanged="BrushSizeSlider_ValueChanged"/>
-
-                <TextBlock Text="Edge Style:" Margin="0,10,0,0"/>
-                <ComboBox SelectionChanged="EdgeStyleSelector_SelectionChanged" Tag="EdgeSelector">
-                    <ComboBoxItem Content="Sheer (Black)" IsSelected="True"/>
-                    <ComboBoxItem Content="Smooth ()"/>
-                    <ComboBoxItem Content="Slope ()"/>
-                </ComboBox>
-
-                <Button Content="Undo" Margin="0,10,0,0" Click="UndoButton_Click" Tag="UndoButton"/>
-                <Button Content="Redo" Margin="0,5,0,0" Click="RedoButton_Click" Tag="RedoButton"/>
-                <!--<Button Content="Clear" Margin="0,5,0,0" Click="ClearButton_Click"/> -->
 
                 <Button Content="Process Map" Margin="0,15,0,0" Click="ProcessMap_Click"/>
 
-                <Button Tag="SaveButton" Content="Save Canvas" Click="SaveButton_Click" Margin="15" />
                 <ProgressBar Tag="EdgeProgressBar"
                  Minimum="0" Maximum="100"
                  Height="20"
                  Visibility="Visible"
                  Margin="10"/>
-                
+
             </StackPanel>
         </local:BaseLayout.LeftContent>
 
@@ -73,14 +52,7 @@
         <!-- Drawing Canvas -->
         <local:BaseLayout.RightContent>
             <Grid>
-                
-                <Canvas Tag="BasemapCanvas" Background="White"/>
-                <Canvas Tag="DrawCanvas"
-                    MouseDown="DrawCanvas_MouseDown"
-                    MouseMove="DrawCanvas_MouseMove"
-                    MouseUp="DrawCanvas_MouseUp"/>
-                
-               
+                <Canvas Tag="HeightMapCanvas" Background="White"/>
             </Grid>
         </local:BaseLayout.RightContent>
     </local:BaseLayout>
