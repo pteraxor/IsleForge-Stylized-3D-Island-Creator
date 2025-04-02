@@ -179,8 +179,25 @@ namespace Prototyping.Pages
 
             #endregion
 
+            //fresh start for computed height map
+            _heightMapCanvas.Children.Clear();
 
+            //create the basemap as one file
+            solvedMap = HeightBaseLayer;
+            solvedMap = OverlayMaps(solvedMap, HeightMidLayer);
+            solvedMap = OverlayMaps(solvedMap, HeightTopLayer);
+            solvedMap = OverlayMaps(solvedMap, TopBaseSmoothed);
+            solvedMap = OverlayMaps(solvedMap, midBaseSmoothed);
+            solvedMap = OverlayMaps(solvedMap, BottomBaseSmoothed);
+            solvedMap = OverlayMaps(solvedMap, TopBaseSmoothed);
 
+            solvedMap = RemoveMaskingNegatives(solvedMap);
+            var solvedMapSmoothed = SmoothVertices2D(solvedMap, factor: 0.5f, iterations: 5);
+
+            ExportLayerToText("solvedMap.txt", solvedMapSmoothed);
+
+            CreateALayerHeightmap(solvedMapSmoothed);
+            MapDataStore.FinalHeightMap = solvedMapSmoothed;
 
         }
 
@@ -988,6 +1005,31 @@ namespace Prototyping.Pages
                     {
                         result[x, y] = -10;
                     }
+                }
+            }
+
+            return result;
+        }
+
+        private float[,] RemoveMaskingNegatives(float[,] map)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (map[x, y] < 0f)
+                    {
+                        result[x, y] = 0;
+                    }
+                    else
+                    {
+                        result[x, y] = map[x, y];
+                    }
+
                 }
             }
 
