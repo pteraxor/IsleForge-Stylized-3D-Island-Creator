@@ -52,7 +52,7 @@
         <!-- Drawing Canvas -->
         <local:BaseLayout.RightContent>
             <Grid>
-                <Canvas Tag="HeightMapCanvas" Background="White"/>
+                <Canvas Tag="HeightMapCanvas" Background="Black"/>
             </Grid>
         </local:BaseLayout.RightContent>
     </local:BaseLayout>

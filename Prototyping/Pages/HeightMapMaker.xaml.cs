@@ -30,8 +30,8 @@ namespace Prototyping.Pages
         private Image _heightMapLayerImage;
 
         private float TOPHEIGHT = 100;
-        private float MIDHEIGHT = 100;
-        private float BASEHEIGHT = 100;
+        private float MIDHEIGHT = 75;
+        private float BASEHEIGHT = 50;
 
         private float[,] baseLayer = MapDataStore.BaseLayer;
         private float[,] midLayer = MapDataStore.MidLayer;
@@ -46,6 +46,7 @@ namespace Prototyping.Pages
         private float[,] midBaseEdges;// MidBaseEdges;
 
         private float[,] bottomBaseEdges;
+        private float[,] bottomAllOnes;
 
         private float[,] solvedMap;
 
@@ -82,52 +83,105 @@ namespace Prototyping.Pages
             TESTINGLOAD();
 
             footprintMask = GetInverseMask(footprint);
+            bottomAllOnes = GetBottom(footprint);
         }
 
         private void ProcessMap_Click(object sender, RoutedEventArgs e)
         {
 
-            //topMidEdges = DetectEdges(topLayer, midLayer, footprintMask);
+            //CreateALayer(baseLayer, Colors.Red);
+            var HeightBaseLayer = ConvertArrayToHeight(baseLayer, BASEHEIGHT);
+            CreateALayerHeightmap(HeightBaseLayer);
+
+            //CreateALayer(midLayer, Colors.Green);
+            var HeightMidLayer = ConvertArrayToHeight(midLayer, MIDHEIGHT);
+            CreateALayerHeightmap(HeightMidLayer);
+
+            //CreateALayer(topLayer, Colors.Blue);
+            var HeightTopLayer = ConvertArrayToHeight(topLayer, TOPHEIGHT);
+            CreateALayerHeightmap(HeightTopLayer);
+
             midBaseEdges = DetectLogicalEdges(baseLayer, midLayer, topLayer);
-            //ExportLayerToText("midBaseEdges.txt", midBaseEdges);
-            Debug.WriteLine("made it past this");
-            CreateALayer(midBaseEdges, Colors.Aqua);
+            //CreateALayer(midBaseEdges, Colors.Gold);
 
-            topMidEdges = DetectLogicalEdges(topLayer, midLayer, baseLayer);
-            
-            CreateALayer(topMidEdges, Colors.Purple);
+            topMidEdges = DetectEdgeBetweenAdjacentLayers(midLayer, topLayer);
+            //ExportLayerToText("topMidEdges.txt", topMidEdges);
 
-            topBaseEdges = DetectLogicalEdges(topLayer, baseLayer, midLayer);
-            var matchedtopBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, topBaseEdges);
-            //ExportLayerToText("matchedtopBaseEdges.txt", matchedtopBaseEdges);
-            CreateALayer(matchedtopBaseEdges, Colors.Indigo);
 
             bottomBaseEdges = DetectSobelEdges(baseLayer);
-            var matchedbottomBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, bottomBaseEdges);
-            //CreateALayer(matchedbottomBaseEdges, Colors.Gold);
-            //CreateALayer(bottomBaseEdges, Colors.Gold);
+            topBaseEdges = DetectLogicalEdges(topLayer, baseLayer, midLayer);
+            //var matchedbottomBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, bottomBaseEdges);
 
-            //topBaseEdges
+            #region top base
 
-            /*
-            // Render the edge map as a bitmap
-            var edgeBitmap = RenderEdgeImage(midBaseEdges, Colors.Red);
+            //createing the top base edges
+            var sub1 = SubtractWithRadius(topBaseEdges, topMidEdges, 2);
+            var sub2 = SubtractWithRadius(sub1, midBaseEdges, 2);
+            var topBaseEdgesWork = sub2;
+            var matchedTopBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, topBaseEdgesWork);
+            //var expandedEdges = ExpandEdgeInfluence(matchedTopBaseEdges); // ExpandEdgeInfluenceClean
+            var expandedTopBaseEdges = ExpandEdgeInfluenceClean(matchedTopBaseEdges); // 
 
-            // Create an Image control to show it
-            var image = new Image
-            {
-                Source = edgeBitmap,
-                Width = edgeBitmap.PixelWidth,
-                Height = edgeBitmap.PixelHeight,
-                Stretch = Stretch.None,
-                SnapsToDevicePixels = true,
-                IsHitTestVisible = false
-            };
+            //CreateALayer(expandedEdges, Colors.Indigo);
 
-            // Clear canvas first if needed
-            //_heightMapCanvas.Children.Clear();
-            _heightMapCanvas.Children.Add(image);
-            */
+            var TopBaseBlendResult = BlendMaskOverwrite(baseLayer, topLayer, expandedTopBaseEdges, BASEHEIGHT, TOPHEIGHT);
+            //ExportLayerToText("blendResult.txt", TopBaseBlendResult);
+            var TopBaseSmoothed = SmoothVertices2D(TopBaseBlendResult, factor: 0.9f, iterations: 70);
+            CreateALayerHeightmap(TopBaseSmoothed);
+            #endregion
+
+            #region topmid
+            // match edges to user drawn edges
+            var matchedTopMidEdges = MatchEdgeLabelsByProximity(edgeLayer, topMidEdges);
+            // expand edge redius
+            var expandedTopMidEdges = ExpandEdgeInfluenceClean(matchedTopMidEdges); // 
+            // create mask area both heights
+            var TopMidBlendResult = BlendMaskOverwrite(midLayer, topLayer, expandedTopMidEdges, MIDHEIGHT, TOPHEIGHT);
+            //smooth heights together
+            var TopMidSmoothed = SmoothVertices2D(TopMidBlendResult, factor: 0.9f, iterations: 70);
+
+            CreateALayerHeightmap(TopMidSmoothed);
+            //CreateALayer(topMidEdges, Colors.Gold);
+
+            #endregion
+
+            #region midbase
+            sub1 = SubtractWithRadius(midBaseEdges, topMidEdges, 2);//topMidEdges
+            var topMidEdgesWork = sub1;
+            // match edges to user drawn edges
+            var matchedmidBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, topMidEdgesWork);
+            // expand edge redius
+            var expandedmidBaseEdges = ExpandEdgeInfluenceClean(matchedmidBaseEdges); // 
+            // create mask area both heights
+            var midBaseBlendResult = BlendMaskOverwrite(baseLayer, midLayer, expandedmidBaseEdges, BASEHEIGHT, MIDHEIGHT);
+            //smooth heights together
+            var midBaseSmoothed = SmoothVertices2D(midBaseBlendResult, factor: 0.9f, iterations: 70);
+
+            CreateALayerHeightmap(midBaseSmoothed);
+            //CreateALayer(expandedmidBaseEdges, Colors.Gold);
+
+            #endregion
+
+            #region basefloor
+            //sub1 = SubtractWithRadius(midBaseEdges, topMidEdges, 2);//topMidEdges
+            var bottomBaseEdgesWork = bottomBaseEdges;
+            // match edges to user drawn edges
+            var matchedBottomBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, bottomBaseEdgesWork);
+            // expand edge redius
+            var expandedBottomBaseEdges = ExpandEdgeInfluenceClean(matchedBottomBaseEdges); // 
+            // create mask area both heights
+            var BottomBaseBlendResult = BlendMaskOverwrite(bottomAllOnes, baseLayer, expandedBottomBaseEdges, 0f, BASEHEIGHT);
+            //smooth heights together
+            var BottomBaseSmoothed = SmoothVertices2D(BottomBaseBlendResult, factor: 0.9f, iterations: 70);
+
+            CreateALayerHeightmap(BottomBaseSmoothed);
+            //CreateALayer(expandedBottomBaseEdges, Colors.Gold);
+
+            #endregion
+
+
+
+
         }
 
         private void CreateALayer(float[,] sentEdges, Color sentColor)
@@ -149,6 +203,46 @@ namespace Prototyping.Pages
             //_heightMapCanvas.Children.Clear();
             _heightMapCanvas.Children.Add(image);
         }
+
+        private void CreateALayerHeightmap(float[,] layer)
+        {
+            int width = layer.GetLength(0);
+            int height = layer.GetLength(1);
+
+            WriteableBitmap bmp = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+
+            using (var context = bmp.GetBitmapContext())
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        float value = layer[x, y];
+
+                        byte gray = (byte)Math.Max(0, Math.Min(255, (value / TOPHEIGHT) * 255));
+                        Color c = (value < 0f)
+                            ? Colors.Transparent
+                            : Color.FromArgb(255, gray, gray, gray);
+
+                        bmp.SetPixel(x, y, c);
+                    }
+                }
+            }
+
+            var image = new Image
+            {
+                Source = bmp,
+                Width = bmp.PixelWidth,
+                Height = bmp.PixelHeight,
+                Stretch = Stretch.None,
+                SnapsToDevicePixels = true,
+                IsHitTestVisible = false
+            };
+
+            _heightMapCanvas.Children.Add(image);
+        }
+
+
 
         //footprintMask = GetInverseMask(footprint);
 
@@ -219,6 +313,19 @@ namespace Prototyping.Pages
 
         #region mask helpers
 
+        private float[,] GetBottom(float[,] input)
+        {
+            int width = input.GetLength(0);
+            int height = input.GetLength(1);
+            float[,] output = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                    output[x, y] = 1f;
+
+            return output;
+        }
+
         private float[,] GetInverseMask(float[,] input)
         {
             int width = input.GetLength(0);
@@ -235,6 +342,54 @@ namespace Prototyping.Pages
         #endregion
 
         #region edge work
+
+        private float[,] DetectEdgeBetweenAdjacentLayers(float[,] layerA, float[,] layerB)
+        {
+            int width = layerA.GetLength(0);
+            int height = layerA.GetLength(1);
+            float[,] result = new float[width, height];
+
+            for (int y = 1; y < height - 1; y++)
+            {
+                for (int x = 1; x < width - 1; x++)
+                {
+                    bool aHere = layerA[x, y] == 1f;
+                    bool bHere = layerB[x, y] == 1f;
+
+                    // Only check if we're not overlapping
+                    if (!aHere && !bHere)
+                        continue;
+
+                    // Check 8 neighbors
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            if (dx == 0 && dy == 0)
+                                continue;
+
+                            int nx = x + dx;
+                            int ny = y + dy;
+
+                            if (layerA[nx, ny] == 1f && layerB[x, y] == 1f)
+                            {
+                                result[x, y] = 1f;
+                                break;
+                            }
+
+                            if (layerB[nx, ny] == 1f && layerA[x, y] == 1f)
+                            {
+                                result[x, y] = 1f;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
 
         private float[,] DetectLogicalEdges(float[,] layerA, float[,] layerB, float[,] excludeLayer)
         {
@@ -430,9 +585,414 @@ namespace Prototyping.Pages
             public float Label;
         }
 
+        private float[,] OverlayMaps(float[,] mapA, float[,] mapB)
+        {
+            int width = mapA.GetLength(0);
+            int height = mapA.GetLength(1);
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    //result[x, y] = (mapB[x, y] != 0f) ? mapB[x, y] : mapA[x, y];
+                    result[x, y] = (mapB[x, y] > 0f) ? mapB[x, y] : mapA[x, y];
+                }
+            }
+
+            return result;
+        }
+
+
+        private float[,] CombineMaps(float[,] mapA, float[,] mapB, bool subtract = false, float threshold = 0.01f)
+        {
+            int width = mapA.GetLength(0);
+            int height = mapA.GetLength(1);
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float value = subtract
+                        ? mapA[x, y] - mapB[x, y]
+                        : mapA[x, y] + mapB[x, y];
+
+                    // Clamp to 0 and clean up tiny float noise
+                    result[x, y] = value >= threshold ? value : 0f;
+                }
+            }
+
+            return result;
+        }
+
+        private float[,] SubtractWithRadius(float[,] mapA, float[,] mapB, int radius)
+        {
+            int width = mapA.GetLength(0);
+            int height = mapA.GetLength(1);
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (mapA[x, y] == 1f)
+                    {
+                        bool foundMatch = false;
+
+                        // Check neighbors within radius
+                        for (int dy = -radius; dy <= radius && !foundMatch; dy++)
+                        {
+                            for (int dx = -radius; dx <= radius && !foundMatch; dx++)
+                            {
+                                int nx = x + dx;
+                                int ny = y + dy;
+
+                                if (nx >= 0 && ny >= 0 && nx < width && ny < height)
+                                {
+                                    if (dx * dx + dy * dy <= radius * radius)
+                                    {
+                                        if (mapB[nx, ny] == 1f)
+                                        {
+                                            foundMatch = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        result[x, y] = foundMatch ? 0f : 1f;
+                    }
+                }
+            }
+
+            return result;
+        }
 
 
         #endregion
+
+        #region edge expanders
+
+        private float[,] ExpandEdgeInfluenceClean(float[,] labeledEdges, int radius2 = 10, int radius3 = 18)
+        {
+            int width = labeledEdges.GetLength(0);
+            int height = labeledEdges.GetLength(1);
+            float[,] expanded = new float[width, height]; // Start empty — no 1s copied
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float val = labeledEdges[x, y];
+
+                    if (val == 2f)
+                        DrawCircularRadius(expanded, x, y, width, height, radius2, 2f);
+                    else if (val == 3f)
+                        DrawCircularRadius(expanded, x, y, width, height, radius3, 3f);
+                }
+            }
+
+            //OverlayEdgeOnExpanded(expanded, labeledEdges);
+
+            return expanded;
+        }
+
+        private void OverlayEdgeOnExpanded(float[,] expanded, float[,] originalEdges)
+        {
+            int width = expanded.GetLength(0);
+            int height = expanded.GetLength(1);
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (expanded[x, y] == 0f && originalEdges[x, y] == 1f)
+                    {
+                        expanded[x, y] = 1f;
+                    }
+                }
+            }
+        }
+
+        private float[,] ExpandEdgeInfluence(float[,] labeledEdges, int radius2 = 6, int radius3 = 12)
+        {
+            int width = labeledEdges.GetLength(0);
+            int height = labeledEdges.GetLength(1);
+
+            float[,] expanded = (float[,])labeledEdges.Clone();
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float val = labeledEdges[x, y];
+
+                    if (val == 2f)
+                        DrawCircularRadius(expanded, x, y, width, height, radius2, 2f);
+                    else if (val == 3f)
+                        DrawCircularRadius(expanded, x, y, width, height, radius3, 3f);
+                }
+            }
+
+            return expanded;
+        }
+
+        private void DrawCircularRadius(float[,] map, int centerX, int centerY, int width, int height, int radius, float value)
+        {
+            for (int dy = -radius; dy <= radius; dy++)
+            {
+                for (int dx = -radius; dx <= radius; dx++)
+                {
+                    int nx = centerX + dx;
+                    int ny = centerY + dy;
+
+                    if (nx >= 0 && ny >= 0 && nx < width && ny < height)
+                    {
+                        if (dx * dx + dy * dy <= radius * radius)
+                        {
+                            if (map[nx, ny] == 0f)
+                            {
+                                map[nx, ny] = value;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+
+        #endregion
+
+        #region blending heights
+
+        private float[,] SmoothVertices2D(float[,] input, float factor = 0.75f, int iterations = 50)
+        {
+            int width = input.GetLength(0);
+            int height = input.GetLength(1);
+
+            float[,] current = (float[,])input.Clone();
+            float[,] next = new float[width, height];
+
+            for (int iter = 0; iter < iterations; iter++)
+            {
+                for (int y = 1; y < height - 1; y++)
+                {
+                    for (int x = 1; x < width - 1; x++)
+                    {
+                        if (current[x, y] < 0f)
+                        {
+                            next[x, y] = current[x, y]; // Preserve -10 "mask" zones
+                            continue;
+                        }
+
+                        float sum = 0f;
+                        int count = 0;
+
+                        // 8 Neighbors
+                        for (int dy = -1; dy <= 1; dy++)
+                        {
+                            for (int dx = -1; dx <= 1; dx++)
+                            {
+                                if (dx == 0 && dy == 0)
+                                    continue;
+
+                                float neighbor = current[x + dx, y + dy];
+                                if (neighbor >= 0f)
+                                {
+                                    sum += neighbor;
+                                    count++;
+                                }
+                            }
+                        }
+
+                        if (count > 0)
+                        {
+                            float avg = sum / count;
+                            next[x, y] = (1f - factor) * current[x, y] + factor * avg;
+                        }
+                        else
+                        {
+                            next[x, y] = current[x, y]; // No valid neighbors, keep as is
+                        }
+                    }
+                }
+
+                // Swap
+                float[,] temp = current;
+                current = next;
+                next = temp;
+            }
+
+            return current;
+        }
+
+
+        private float[,] SmoothVertices2DNegatvies(float[,] input, float factor = 0.6f, int iterations = 10)
+        {
+            int width = input.GetLength(0);
+            int height = input.GetLength(1);
+
+            float[,] current = (float[,])input.Clone();
+            float[,] next = new float[width, height];
+
+            for (int iter = 0; iter < iterations; iter++)
+            {
+                for (int y = 1; y < height - 1; y++)
+                {
+                    for (int x = 1; x < width - 1; x++)
+                    {
+                        float avg =
+                            (current[x - 1, y] + current[x + 1, y] +     // Left/Right
+                             current[x, y - 1] + current[x, y + 1] +     // Top/Bottom
+                             current[x - 1, y - 1] + current[x + 1, y - 1] + // Top-left/Top-right
+                             current[x - 1, y + 1] + current[x + 1, y + 1]) // Bottom-left/Bottom-right
+                            / 8f;
+
+                        // Interpolate toward the average
+                        next[x, y] = (1f - factor) * current[x, y] + factor * avg;
+                    }
+                }
+
+                // Swap buffers for next iteration
+                float[,] temp = current;
+                current = next;
+                next = temp;
+            }
+
+            return current;
+        }
+
+        private float[,] BlendMaskOverwrite(float[,] mapA, float[,] mapB, float[,] mask, float valueA, float valueB)
+        {
+            int countA = 0, countB = 0;
+            int width = mask.GetLength(0);
+            int height = mask.GetLength(1);
+            float[,] result = new float[width, height];
+
+            // Step 0: bad values
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (mask[x, y] < 1f)
+                    {
+                        result[x, y] = -10;
+                    }
+                }
+            }
+
+            // Step 1: Base layer (valueA)
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (mask[x, y] > 1f && mapA[x, y] == 1f)
+                    {
+                        result[x, y] = valueA;
+                        countA++;
+                    }
+                }
+            }
+
+            // Step 2: Top layer (valueB) — overwrite
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (mask[x, y] > 1f && mapB[x, y] == 1f)
+                    {
+                        result[x, y] = valueB;
+                        countB++;
+                    }
+                }
+            }
+
+            Debug.WriteLine($"Blend result: valueA written {countA} times, valueB written {countB} times");
+            return result;
+        }
+
+
+        private float[,] BlendByEdgeMaskWithPriority(float[,] mapA, float[,] mapB, float[,] edgeMask, float valueA, float valueB)
+        {
+            int width = edgeMask.GetLength(0);
+            int height = edgeMask.GetLength(1);
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    result[x, y] = -10;
+                    float edgeVal = edgeMask[x, y];
+
+                    if (edgeVal >= 2f && mapB[x, y] == 1f)
+                    {
+                        result[x, y] = valueB; // top wins
+                    }
+                    else if (edgeVal >= 2f && mapA[x, y] == 1f && result[x, y] == -10f)
+                    {
+                        result[x, y] = valueA; // base gets applied only if nothing else won
+                    }
+                }
+            }
+
+            return result;
+        }
+
+
+        private float[,] BlendByEdgeMask(float[,] mapA, float[,] mapB, float[,] edgeMask, float valueA, float valueB)
+        {
+            int width = edgeMask.GetLength(0);
+            int height = edgeMask.GetLength(1);
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float edgeVal = edgeMask[x, y];
+
+                    if (edgeVal == 2f && mapA[x, y] == 1f)
+                    {
+                        result[x, y] = valueA;
+                    }
+                    else if (edgeVal == 3f && mapB[x, y] == 1f)
+                    {
+                        result[x, y] = valueB;
+                    }
+                }
+            }
+
+            return result;
+        }
+
+
+        #endregion
+
+        private float[,] ConvertArrayToHeight(float[,] map, float heightValue)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (map[x, y] > 0f)
+                    {
+                        result[x, y] = heightValue;
+                    }
+                    else
+                    {
+                        result[x, y] = -10;
+                    }
+                }
+            }
+
+            return result;
+        }
 
         #region debugging visuals
         private Color AdjustBrightnessAdditive(Color color, float brightnessDelta)
@@ -533,7 +1093,7 @@ namespace Prototyping.Pages
                         }
                         else if (edgeMap[x, y] == 2f)
                         {
-                            Debug.WriteLine("found a 2");
+                            //Debug.WriteLine("found a 2");
                             Color adjusted = AdjustBrightnessAdditive(color, .5f);
                             bmp.SetPixel(x, y, adjusted);
                             //bmp.SetPixel(x, y, color);
