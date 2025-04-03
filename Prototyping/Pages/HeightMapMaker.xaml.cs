@@ -176,7 +176,7 @@ namespace Prototyping.Pages
             // create mask area both heights
             var BottomBaseBlendResult = BlendMaskOverwrite(bottomAllOnes, baseLayer, expandedBottomBaseEdges, 0f, BASEHEIGHT);
             //smooth heights together
-            var BottomBaseSmoothed = SmoothVertices2D(BottomBaseBlendResult, factor: 0.7f, iterations: 70);
+            var BottomBaseSmoothed = SmoothVertices2D(BottomBaseBlendResult, factor: 0.7f, iterations: 70, ignoreZeroes: false);
 
             CreateALayerHeightmap(BottomBaseSmoothed);
             //CreateALayer(expandedBottomBaseEdges, Colors.Gold);
@@ -197,7 +197,8 @@ namespace Prototyping.Pages
             solvedMap = SmartOverlayWithMask(solvedMap, TopBaseSmoothed, baseLayer);
 
             solvedMap = RemoveMaskingNegatives(solvedMap);
-            var solvedMapSmoothed = SmoothVertices2D(solvedMap, factor: 0.4f, iterations: 3);
+            //var solvedMapSmoothed = solvedMap;
+            var solvedMapSmoothed = SmoothVertices2D(solvedMap, factor: 0.4f, iterations: 3, ignoreZeroes: false);
 
             ExportLayerToText("solvedMap.txt", solvedMapSmoothed);
 
@@ -607,6 +608,11 @@ namespace Prototyping.Pages
             public float Label;
         }
 
+
+        #endregion
+
+        #region map combine operations
+
         private float[,] OverlayMaps(float[,] mapA, float[,] mapB)
         {
             int width = mapA.GetLength(0);
@@ -649,48 +655,6 @@ namespace Prototyping.Pages
             return result;
         }
 
-
-        private float[,] OverlayMapsWithMask(float[,] mapA, float[,] mapB, float[,] mask)
-        {
-            int width = mapA.GetLength(0);
-            int height = mapA.GetLength(1);
-            float[,] result = new float[width, height];
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    // Overlay only where mask has non-zero value
-                    result[x, y] = (mask[x, y] > 0f) ? mapB[x, y] : mapA[x, y];
-                }
-            }
-
-            return result;
-        }
-
-
-
-        private float[,] CombineMaps(float[,] mapA, float[,] mapB, bool subtract = false, float threshold = 0.01f)
-        {
-            int width = mapA.GetLength(0);
-            int height = mapA.GetLength(1);
-            float[,] result = new float[width, height];
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    float value = subtract
-                        ? mapA[x, y] - mapB[x, y]
-                        : mapA[x, y] + mapB[x, y];
-
-                    // Clamp to 0 and clean up tiny float noise
-                    result[x, y] = value >= threshold ? value : 0f;
-                }
-            }
-
-            return result;
-        }
 
         private float[,] SubtractWithRadius(float[,] mapA, float[,] mapB, int radius)
         {
@@ -735,6 +699,54 @@ namespace Prototyping.Pages
             return result;
         }
 
+        private float[,] ConvertArrayToHeight(float[,] map, float heightValue)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (map[x, y] > 0f)
+                    {
+                        result[x, y] = heightValue;
+                    }
+                    else
+                    {
+                        result[x, y] = -10;
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        private float[,] RemoveMaskingNegatives(float[,] map)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (map[x, y] < 0f)
+                    {
+                        result[x, y] = 0;
+                    }
+                    else
+                    {
+                        result[x, y] = map[x, y];
+                    }
+
+                }
+            }
+
+            return result;
+        }
 
         #endregion
 
@@ -832,7 +844,102 @@ namespace Prototyping.Pages
 
         #region blending heights
 
-        private float[,] SmoothVertices2D(float[,] input, float factor = 0.75f, int iterations = 50)
+        private float[,] SmoothVertices2D(float[,] input, float factor = 0.75f, int iterations = 50, Boolean ignoreZeroes = true)
+        {
+            int width = input.GetLength(0);
+            int height = input.GetLength(1);
+
+            float min = float.MaxValue;
+            float max = float.MinValue;
+
+            // Step 0: Determine valid min and max (ignore negatives)
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float val = input[x, y];
+                    if(ignoreZeroes == true)
+                    {
+                        if (val > 0f)
+                        {
+                            if (val < min) min = val;
+                            if (val > max) max = val;
+                        }
+                    }
+                    else
+                    {
+                        if (val >= 0f)
+                        {
+                            if (val < min) min = val;
+                            if (val > max) max = val;
+                        }
+                    }
+                    
+                }
+            }
+
+            Debug.WriteLine($"Min: {min}");
+            Debug.WriteLine($"Max: {max}");
+
+            float[,] current = (float[,])input.Clone();
+            float[,] next = new float[width, height];
+
+            for (int iter = 0; iter < iterations; iter++)
+            {
+                for (int y = 1; y < height - 1; y++)
+                {
+                    for (int x = 1; x < width - 1; x++)
+                    {
+                        if (current[x, y] < 0f)
+                        {
+                            next[x, y] = current[x, y]; // preserve -10 regions
+                            continue;
+                        }
+
+                        float sum = 0f;
+                        int count = 0;
+
+                        for (int dy = -1; dy <= 1; dy++)
+                        {
+                            for (int dx = -1; dx <= 1; dx++)
+                            {
+                                if (dx == 0 && dy == 0) continue;
+
+                                float neighbor = current[x + dx, y + dy];
+                                if (neighbor >= 0f)
+                                {
+                                    sum += neighbor;
+                                    count++;
+                                }
+                            }
+                        }
+
+                        if (count > 0)
+                        {
+                            float avg = sum / count;
+                            float smoothed = (1f - factor) * current[x, y] + factor * avg;
+
+                            // Clamp within valid min/max
+                            next[x, y] = Math.Max(min, Math.Min(max, smoothed));
+                        }
+                        else
+                        {
+                            next[x, y] = current[x, y];
+                        }
+                    }
+                }
+
+                // Swap buffers
+                float[,] temp = current;
+                current = next;
+                next = temp;
+            }
+
+            return current;
+        }
+
+
+        private float[,] SmoothVertices2DNoBounds(float[,] input, float factor = 0.75f, int iterations = 50)
         {
             int width = input.GetLength(0);
             int height = input.GetLength(1);
@@ -893,42 +1000,7 @@ namespace Prototyping.Pages
             return current;
         }
 
-
-        private float[,] SmoothVertices2DNegatvies(float[,] input, float factor = 0.6f, int iterations = 10)
-        {
-            int width = input.GetLength(0);
-            int height = input.GetLength(1);
-
-            float[,] current = (float[,])input.Clone();
-            float[,] next = new float[width, height];
-
-            for (int iter = 0; iter < iterations; iter++)
-            {
-                for (int y = 1; y < height - 1; y++)
-                {
-                    for (int x = 1; x < width - 1; x++)
-                    {
-                        float avg =
-                            (current[x - 1, y] + current[x + 1, y] +     // Left/Right
-                             current[x, y - 1] + current[x, y + 1] +     // Top/Bottom
-                             current[x - 1, y - 1] + current[x + 1, y - 1] + // Top-left/Top-right
-                             current[x - 1, y + 1] + current[x + 1, y + 1]) // Bottom-left/Bottom-right
-                            / 8f;
-
-                        // Interpolate toward the average
-                        next[x, y] = (1f - factor) * current[x, y] + factor * avg;
-                    }
-                }
-
-                // Swap buffers for next iteration
-                float[,] temp = current;
-                current = next;
-                next = temp;
-            }
-
-            return current;
-        }
-
+       
         private float[,] BlendMaskOverwrite(float[,] mapA, float[,] mapB, float[,] mask, float valueA, float valueB)
         {
             int countA = 0, countB = 0;
@@ -978,112 +1050,10 @@ namespace Prototyping.Pages
             return result;
         }
 
-
-        private float[,] BlendByEdgeMaskWithPriority(float[,] mapA, float[,] mapB, float[,] edgeMask, float valueA, float valueB)
-        {
-            int width = edgeMask.GetLength(0);
-            int height = edgeMask.GetLength(1);
-            float[,] result = new float[width, height];
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    result[x, y] = -10;
-                    float edgeVal = edgeMask[x, y];
-
-                    if (edgeVal >= 2f && mapB[x, y] == 1f)
-                    {
-                        result[x, y] = valueB; // top wins
-                    }
-                    else if (edgeVal >= 2f && mapA[x, y] == 1f && result[x, y] == -10f)
-                    {
-                        result[x, y] = valueA; // base gets applied only if nothing else won
-                    }
-                }
-            }
-
-            return result;
-        }
-
-
-        private float[,] BlendByEdgeMask(float[,] mapA, float[,] mapB, float[,] edgeMask, float valueA, float valueB)
-        {
-            int width = edgeMask.GetLength(0);
-            int height = edgeMask.GetLength(1);
-            float[,] result = new float[width, height];
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    float edgeVal = edgeMask[x, y];
-
-                    if (edgeVal == 2f && mapA[x, y] == 1f)
-                    {
-                        result[x, y] = valueA;
-                    }
-                    else if (edgeVal == 3f && mapB[x, y] == 1f)
-                    {
-                        result[x, y] = valueB;
-                    }
-                }
-            }
-
-            return result;
-        }
-
-
+      
         #endregion
 
-        private float[,] ConvertArrayToHeight(float[,] map, float heightValue)
-        {
-            int width = map.GetLength(0);
-            int height = map.GetLength(1);
-            float[,] result = new float[width, height];
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    if (map[x, y] > 0f)
-                    {
-                        result[x, y] = heightValue;
-                    }
-                    else
-                    {
-                        result[x, y] = -10;
-                    }
-                }
-            }
-
-            return result;
-        }
-
-        private float[,] RemoveMaskingNegatives(float[,] map)
-        {
-            int width = map.GetLength(0);
-            int height = map.GetLength(1);
-            float[,] result = new float[width, height];
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    if (map[x, y] < 0f)
-                    {
-                        result[x, y] = 0;
-                    }
-                    else
-                    {
-                        result[x, y] = map[x, y];
-                    }
-
-                }
-            }
-
-            return result;
-        }
+        
 
         #region debugging visuals
         private Color AdjustBrightnessAdditive(Color color, float brightnessDelta)
