@@ -29,9 +29,12 @@ namespace Prototyping.Pages
         private WriteableBitmap _heightMapLayer;
         private Image _heightMapLayerImage;
 
-        private float TOPHEIGHT = 100;
-        private float MIDHEIGHT = 75;
-        private float BASEHEIGHT = 50;
+        private float TOPHEIGHT = 50;
+        private float MIDHEIGHT = 40;
+        private float BASEHEIGHT = 30;
+
+        private const int SMALLER_RADIUS = 20;
+        private const int LARGER_RADIUS = 30;
 
         private float[,] baseLayer = MapDataStore.BaseLayer;
         private float[,] midLayer = MapDataStore.MidLayer;
@@ -120,13 +123,13 @@ namespace Prototyping.Pages
             var topBaseEdgesWork = sub2;
             var matchedTopBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, topBaseEdgesWork);
             //var expandedEdges = ExpandEdgeInfluence(matchedTopBaseEdges); // ExpandEdgeInfluenceClean
-            var expandedTopBaseEdges = ExpandEdgeInfluenceClean(matchedTopBaseEdges); // 
+            var expandedTopBaseEdges = ExpandEdgeInfluenceClean(matchedTopBaseEdges, SMALLER_RADIUS, LARGER_RADIUS); // 
 
             //CreateALayer(expandedEdges, Colors.Indigo);
 
             var TopBaseBlendResult = BlendMaskOverwrite(baseLayer, topLayer, expandedTopBaseEdges, BASEHEIGHT, TOPHEIGHT);
             //ExportLayerToText("blendResult.txt", TopBaseBlendResult);
-            var TopBaseSmoothed = SmoothVertices2D(TopBaseBlendResult, factor: 0.9f, iterations: 70);
+            var TopBaseSmoothed = SmoothVertices2D(TopBaseBlendResult, factor: 0.7f, iterations: 70);
             CreateALayerHeightmap(TopBaseSmoothed);
             #endregion
 
@@ -134,11 +137,11 @@ namespace Prototyping.Pages
             // match edges to user drawn edges
             var matchedTopMidEdges = MatchEdgeLabelsByProximity(edgeLayer, topMidEdges);
             // expand edge redius
-            var expandedTopMidEdges = ExpandEdgeInfluenceClean(matchedTopMidEdges); // 
+            var expandedTopMidEdges = ExpandEdgeInfluenceClean(matchedTopMidEdges, SMALLER_RADIUS, LARGER_RADIUS);
             // create mask area both heights
             var TopMidBlendResult = BlendMaskOverwrite(midLayer, topLayer, expandedTopMidEdges, MIDHEIGHT, TOPHEIGHT);
             //smooth heights together
-            var TopMidSmoothed = SmoothVertices2D(TopMidBlendResult, factor: 0.9f, iterations: 70);
+            var TopMidSmoothed = SmoothVertices2D(TopMidBlendResult, factor: 0.7f, iterations: 70);
 
             CreateALayerHeightmap(TopMidSmoothed);
             //CreateALayer(topMidEdges, Colors.Gold);
@@ -151,11 +154,12 @@ namespace Prototyping.Pages
             // match edges to user drawn edges
             var matchedmidBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, topMidEdgesWork);
             // expand edge redius
-            var expandedmidBaseEdges = ExpandEdgeInfluenceClean(matchedmidBaseEdges); // 
+            var expandedmidBaseEdges = ExpandEdgeInfluenceClean(matchedmidBaseEdges, SMALLER_RADIUS, LARGER_RADIUS);
+            //expandedmidBaseEdges = SubtractWithRadius(expandedmidBaseEdges, footprint, 1); //now this seems to bleed over a little trying to fix that
             // create mask area both heights
-            var midBaseBlendResult = BlendMaskOverwrite(baseLayer, midLayer, expandedmidBaseEdges, BASEHEIGHT, MIDHEIGHT);
+            var midBaseBlendResult = BlendMaskOverwrite(baseLayer, midLayer, expandedmidBaseEdges, BASEHEIGHT, MIDHEIGHT);    
             //smooth heights together
-            var midBaseSmoothed = SmoothVertices2D(midBaseBlendResult, factor: 0.9f, iterations: 70);
+            var midBaseSmoothed = SmoothVertices2D(midBaseBlendResult, factor: 0.7f, iterations: 70);
 
             CreateALayerHeightmap(midBaseSmoothed);
             //CreateALayer(expandedmidBaseEdges, Colors.Gold);
@@ -168,11 +172,11 @@ namespace Prototyping.Pages
             // match edges to user drawn edges
             var matchedBottomBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, bottomBaseEdgesWork);
             // expand edge redius
-            var expandedBottomBaseEdges = ExpandEdgeInfluenceClean(matchedBottomBaseEdges); // 
+            var expandedBottomBaseEdges = ExpandEdgeInfluenceClean(matchedBottomBaseEdges, (int)(SMALLER_RADIUS * 2f), (int)(LARGER_RADIUS * 2f));
             // create mask area both heights
             var BottomBaseBlendResult = BlendMaskOverwrite(bottomAllOnes, baseLayer, expandedBottomBaseEdges, 0f, BASEHEIGHT);
             //smooth heights together
-            var BottomBaseSmoothed = SmoothVertices2D(BottomBaseBlendResult, factor: 0.9f, iterations: 70);
+            var BottomBaseSmoothed = SmoothVertices2D(BottomBaseBlendResult, factor: 0.7f, iterations: 70);
 
             CreateALayerHeightmap(BottomBaseSmoothed);
             //CreateALayer(expandedBottomBaseEdges, Colors.Gold);
@@ -186,13 +190,14 @@ namespace Prototyping.Pages
             solvedMap = HeightBaseLayer;
             solvedMap = OverlayMaps(solvedMap, HeightMidLayer);
             solvedMap = OverlayMaps(solvedMap, HeightTopLayer);
-            solvedMap = OverlayMaps(solvedMap, TopBaseSmoothed);
-            solvedMap = OverlayMaps(solvedMap, midBaseSmoothed);
+            solvedMap = SmartOverlayWithMask(solvedMap, TopBaseSmoothed, baseLayer);
+            solvedMap = SmartOverlayWithMask(solvedMap, TopMidSmoothed, baseLayer);
+            solvedMap = SmartOverlayWithMask(solvedMap, midBaseSmoothed, baseLayer);
             solvedMap = OverlayMaps(solvedMap, BottomBaseSmoothed);
-            solvedMap = OverlayMaps(solvedMap, TopBaseSmoothed);
+            solvedMap = SmartOverlayWithMask(solvedMap, TopBaseSmoothed, baseLayer);
 
             solvedMap = RemoveMaskingNegatives(solvedMap);
-            var solvedMapSmoothed = SmoothVertices2D(solvedMap, factor: 0.5f, iterations: 5);
+            var solvedMapSmoothed = SmoothVertices2D(solvedMap, factor: 0.4f, iterations: 3);
 
             ExportLayerToText("solvedMap.txt", solvedMapSmoothed);
 
@@ -619,6 +624,50 @@ namespace Prototyping.Pages
 
             return result;
         }
+
+        private float[,] SmartOverlayWithMask(float[,] mapA, float[,] mapB, float[,] mask)
+        {
+            int width = mapA.GetLength(0);
+            int height = mapA.GetLength(1);
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (mask[x, y] > 0f && mapB[x, y] >= 0f)
+                    {
+                        result[x, y] = mapB[x, y];
+                    }
+                    else
+                    {
+                        result[x, y] = mapA[x, y];
+                    }
+                }
+            }
+
+            return result;
+        }
+
+
+        private float[,] OverlayMapsWithMask(float[,] mapA, float[,] mapB, float[,] mask)
+        {
+            int width = mapA.GetLength(0);
+            int height = mapA.GetLength(1);
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    // Overlay only where mask has non-zero value
+                    result[x, y] = (mask[x, y] > 0f) ? mapB[x, y] : mapA[x, y];
+                }
+            }
+
+            return result;
+        }
+
 
 
         private float[,] CombineMaps(float[,] mapA, float[,] mapB, bool subtract = false, float threshold = 0.01f)
@@ -1168,6 +1217,7 @@ namespace Prototyping.Pages
         private void Next_Click(object sender, RoutedEventArgs e)
         {
             //for when it's time to to the next step. need to consider how to check for when it's okay to do so
+            NavigationService.Navigate(new MeshMakerPage());
         }
 
     }
