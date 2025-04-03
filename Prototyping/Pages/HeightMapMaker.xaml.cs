@@ -157,7 +157,7 @@ namespace Prototyping.Pages
             var expandedmidBaseEdges = ExpandEdgeInfluenceClean(matchedmidBaseEdges, SMALLER_RADIUS, LARGER_RADIUS);
             //expandedmidBaseEdges = SubtractWithRadius(expandedmidBaseEdges, footprint, 1); //now this seems to bleed over a little trying to fix that
             // create mask area both heights
-            var midBaseBlendResult = BlendMaskOverwrite(baseLayer, midLayer, expandedmidBaseEdges, BASEHEIGHT, MIDHEIGHT);    
+            var midBaseBlendResult = BlendMaskOverwrite(baseLayer, midLayer, expandedmidBaseEdges, BASEHEIGHT, MIDHEIGHT);
             //smooth heights together
             var midBaseSmoothed = SmoothVertices2D(midBaseBlendResult, factor: 0.7f, iterations: 70);
 
@@ -194,7 +194,8 @@ namespace Prototyping.Pages
             solvedMap = SmartOverlayWithMask(solvedMap, TopMidSmoothed, baseLayer);
             solvedMap = SmartOverlayWithMask(solvedMap, midBaseSmoothed, baseLayer);
             solvedMap = OverlayMaps(solvedMap, BottomBaseSmoothed);
-            solvedMap = SmartOverlayWithMask(solvedMap, TopBaseSmoothed, baseLayer);
+            //solvedMap = SmartOverlayWithMask(solvedMap, TopBaseSmoothed, baseLayer);
+
 
             solvedMap = RemoveMaskingNegatives(solvedMap);
             //var solvedMapSmoothed = solvedMap;
@@ -202,9 +203,37 @@ namespace Prototyping.Pages
 
             ExportLayerToText("solvedMap.txt", solvedMapSmoothed);
 
-            CreateALayerHeightmap(solvedMapSmoothed);
+//CreateALayerHeightmap(solvedMapSmoothed);
             MapDataStore.FinalHeightMap = solvedMapSmoothed;
 
+
+            ///////////
+            ///
+
+            //change arrays to labeled objects
+            var labeledBaseMap = CreateLabeledMap(HeightBaseLayer, "Base");
+            var labeledMidLayer = CreateLabeledMap(HeightMidLayer, "Mid");
+            var labeledTopLayer = CreateLabeledMap(HeightTopLayer, "Top");
+            var labeledTopBaseSmoothed = CreateLabeledMap(TopBaseSmoothed, "ramp");
+            var labeledTopMidSmoothed = CreateLabeledMap(TopMidSmoothed, "ramp");
+            var labeledmidBaseSmoothed = CreateLabeledMap(midBaseSmoothed, "ramp");
+            var labeledBottomBaseSmoothed = CreateLabeledMap(BottomBaseSmoothed, "beach");
+
+            var solvedMapWithLabels = labeledBaseMap;
+            solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledMidLayer);
+            solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledTopLayer);
+            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledTopBaseSmoothed, baseLayer);
+            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledTopMidSmoothed, baseLayer);
+            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledmidBaseSmoothed, baseLayer);
+            solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledBottomBaseSmoothed);
+
+            RemoveNegativesFromLabeledMap(solvedMapWithLabels);
+
+            SmoothLabeledMap(solvedMapWithLabels, 0.4f, 3, ignoreZeroes: false);
+
+            SaveLabeledMapToText(" solvedMapWithLabels.txt", solvedMapWithLabels);
+
+            CreateLabeledHeightmapLayer(solvedMapWithLabels);
         }
 
         private void CreateALayer(float[,] sentEdges, Color sentColor)
@@ -1050,10 +1079,191 @@ namespace Prototyping.Pages
             return result;
         }
 
-      
+
         #endregion
 
-        
+        #region expanded data type
+
+        public void SmoothLabeledMap(
+    LabeledValue[,] labeledMap,
+    float factor = 0.75f,
+    int iterations = 50,
+    bool ignoreZeroes = true)
+        {
+            int width = labeledMap.GetLength(0);
+            int height = labeledMap.GetLength(1);
+
+            // Step 1: Extract values
+            float[,] raw = new float[width, height];
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                    raw[x, y] = labeledMap[x, y].Value;
+
+            // Step 2: Smooth with your logic
+            float[,] smoothed = SmoothVertices2D(raw, factor, iterations, ignoreZeroes);
+            //SmoothVertices2D(solvedMap, factor: 0.4f, iterations: 3, ignoreZeroes: false);
+
+            // Step 3: Re-apply only .Value — preserve label
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float val = smoothed[x, y];
+                    labeledMap[x, y].Value = val;
+                    // label remains unchanged
+                }
+            }
+        }
+
+        public void RemoveNegativesFromLabeledMap(LabeledValue[,] map)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (map[x, y].Value < 0f)
+                    {
+                        map[x, y].Value = 0f;
+                        map[x, y].Label = "None"; // or "Masked" or whatever placeholder
+                    }
+                }
+            }
+        }
+
+
+        public static LabeledValue[,] CreateLabeledMap(float[,] source, string label)
+        {
+            int width = source.GetLength(0);
+            int height = source.GetLength(1);
+            var result = new LabeledValue[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float val = source[x, y];
+                    if (val > 0f)
+                        result[x, y] = new LabeledValue(val, label);
+                    else
+                        result[x, y] = new LabeledValue(val, "None");
+                }
+            }
+
+            return result;
+        }
+
+        public static LabeledValue[,] OverlayLabeledMaps(LabeledValue[,] mapA, LabeledValue[,] mapB)
+        {
+            int width = mapA.GetLength(0);
+            int height = mapA.GetLength(1);
+            var result = new LabeledValue[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    result[x, y] = (mapB[x, y].Value > 0f)
+                        ? mapB[x, y]
+                        : mapA[x, y];
+                }
+            }
+
+            return result;
+        }
+
+        public static LabeledValue[,] SmartOverlayLabeledWithMask(
+    LabeledValue[,] mapA,
+    LabeledValue[,] mapB,
+    float[,] mask)
+        {
+            int width = mapA.GetLength(0);
+            int height = mapA.GetLength(1);
+            var result = new LabeledValue[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (mask[x, y] > 0f && mapB[x, y].Value >= 0f)
+                    {
+                        result[x, y] = mapB[x, y];
+                    }
+                    else
+                    {
+                        result[x, y] = mapA[x, y];
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        public void CreateLabeledHeightmapLayer(LabeledValue[,] labeledMap)
+        {
+            int width = labeledMap.GetLength(0);
+            int height = labeledMap.GetLength(1);
+            float[,] valuesOnly = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    valuesOnly[x, y] = labeledMap[x, y].Value;
+                }
+            }
+
+            CreateALayerHeightmap(valuesOnly);
+        }
+
+
+
+        public static void SaveLabeledMapToText(string path, LabeledValue[,] map)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
+            var sb = new StringBuilder();
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    sb.Append(map[x, y].ToString()).Append(" ");
+                }
+                sb.AppendLine();
+            }
+
+            System.IO.File.WriteAllText(path, sb.ToString());
+        }
+
+        public static LabeledValue[,] LoadLabeledMapFromText(string path)
+        {
+            var lines = System.IO.File.ReadAllLines(path);
+            int height = lines.Length;
+            int width = lines[0].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Length;
+
+            var result = new LabeledValue[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                var tokens = lines[y].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                for (int x = 0; x < width; x++)
+                {
+                    var parts = tokens[x].Split('|');
+                    float value = float.Parse(parts[0]);
+                    string label = parts.Length > 1 ? parts[1] : "";
+                    result[x, y] = new LabeledValue(value, label);
+                }
+            }
+
+            return result;
+        }
+
+
+
+        #endregion
 
         #region debugging visuals
         private Color AdjustBrightnessAdditive(Color color, float brightnessDelta)

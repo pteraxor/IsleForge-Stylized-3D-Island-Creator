@@ -6,6 +6,23 @@ using System.Threading.Tasks;
 
 namespace Prototyping.Helpers
 {
+    public struct LabeledValue
+    {
+        public float Value;
+        public string Label;
+
+        public LabeledValue(float value, string label)
+        {
+            Value = value;
+            Label = label;
+        }
+
+        public override string ToString()
+        {
+            return $"{Value:0.00}|{Label}";
+        }
+    }
+
     public static class MapDataStore
     {
         public static float[,] BaseLayer { get; set; }
@@ -21,6 +38,8 @@ namespace Prototyping.Helpers
         public static float[,] BottomBaseEdges { get; set; }
 
         public static float[,] FinalHeightMap { get; set; }
+
+        public static LabeledValue[,] AnnotatedHeightMap { get; set; }
 
     }
 
