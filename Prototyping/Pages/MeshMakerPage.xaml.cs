@@ -38,6 +38,7 @@ namespace Prototyping.Pages
         private Model3DGroup _modelGroup;
 
 
+
         public MeshMakerPage()
         {
             InitializeComponent();
@@ -83,6 +84,8 @@ namespace Prototyping.Pages
             }
 
             MeshGeometry3D mesh = CreateMeshGeometryFromHeightMap(labeledHeightMap);
+            Point3D center = GetMeshCenter(labeledHeightMap);
+            SetCameraToMesh(_viewport3D, center);
 
             // You can change the material to reflect the label later
             var material = new DiffuseMaterial(new SolidColorBrush(Colors.LightGray));
@@ -195,6 +198,58 @@ namespace Prototyping.Pages
             }
 
             return mesh;
+        }
+
+
+        private Point3D GetMeshCenter(LabeledValue[,] heightMap)
+        {
+            int width = heightMap.GetLength(0);
+            int height = heightMap.GetLength(1);
+
+            double sumX = 0;
+            double sumZ = 0;
+            double sumY = 0;
+            int count = 0;
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float val = heightMap[x, y].Value;
+                    if (val > 0f)
+                    {
+                        sumX += x;
+                        sumZ += y;
+                        sumY += val;
+                        count++;
+                    }
+                }
+            }
+
+            if (count == 0)
+                return new Point3D(width / 2.0, 0, height / 2.0); // fallback
+
+            return new Point3D(sumX / count, sumY / count, sumZ / count);
+        }
+
+        private void SetCameraToMesh(Viewport3D viewport, Point3D center)
+        {
+            // Pull the camera back and up from the center
+            Vector3D offset = new Vector3D(0, 300, 50);
+            Point3D position = center + offset;
+
+            Vector3D lookDirection = center - position;
+            lookDirection.Normalize();
+
+            var camera = new PerspectiveCamera
+            {
+                Position = position,
+                LookDirection = lookDirection,
+                UpDirection = new Vector3D(0, 1, 0),
+                FieldOfView = 60
+            };
+
+            viewport.Camera = camera;
         }
 
 
@@ -326,157 +381,16 @@ namespace Prototyping.Pages
                          .First().Key;
         }
 
-        public void ExportLabeledHeightmapWithAngleUVs(LabeledValue[,] map, string filePath)
-        {
-            int width = map.GetLength(0);
-            int height = map.GetLength(1);
-
-            List<string> vertices = new List<string>();
-            List<string> uvs = new List<string>();
-            List<string> faces = new List<string>();
-
-            int vertexIndex = 1;
-            int uvIndex = 1;
-
-            Dictionary<string, Tuple<float, float>> uvBlockMap = new Dictionary<string, Tuple<float, float>>()
-    {
-        { "flat", Tuple.Create(0f, 0.33f) },
-        { "slope", Tuple.Create(0.33f, 0.66f) },
-        { "cliff", Tuple.Create(0.66f, 1.0f) },
-        { "beach", Tuple.Create(0.0f, 1.0f) } // optional full span
-    };
-
-            for (int y = 0; y < height - 1; y++)
-            {
-                for (int x = 0; x < width - 1; x++)
-                {
-                    // Vertices of the quad
-                    Point3D p00 = new Point3D(x, map[x, y].Value, y);
-                    Point3D p10 = new Point3D(x + 1, map[x + 1, y].Value, y);
-                    Point3D p01 = new Point3D(x, map[x, y + 1].Value, y + 1);
-                    Point3D p11 = new Point3D(x + 1, map[x + 1, y + 1].Value, y + 1);
-
-                    string l00 = map[x, y].Label;
-                    string l10 = map[x + 1, y].Label;
-                    string l01 = map[x, y + 1].Label;
-                    string l11 = map[x + 1, y + 1].Label;
-
-                    // Triangle 1
-                    ExportTriangleWithUV(p00, p11, p10, l00, l11, l10, uvBlockMap, vertices, uvs, faces, ref vertexIndex, ref uvIndex);
-
-                    // Triangle 2
-                    ExportTriangleWithUV(p00, p01, p11, l00, l01, l11, uvBlockMap, vertices, uvs, faces, ref vertexIndex, ref uvIndex);
-                }
-            }
-
-            using (var writer = new StreamWriter(filePath))
-            {
-                foreach (var v in vertices)
-                    writer.WriteLine(v);
-                foreach (var vt in uvs)
-                    writer.WriteLine(vt);
-                foreach (var f in faces)
-                    writer.WriteLine(f);
-            }
-
-            MessageBox.Show("OBJ with angle-based UVs exported.");
-        }
-
-        private void ExportTriangleWithUV(
-    Point3D a, Point3D b, Point3D c,
-    string la, string lb, string lc,
-    Dictionary<string, Tuple<float, float>> uvBlocks,
-    List<string> verts, List<string> uvs,
-    List<string> faces,
-    ref int vi, ref int vti)
-        {
-            string region = ClassifyTriangle(a, b, c, la, lb, lc);
-
-            Tuple<float, float> uvRange = uvBlocks.ContainsKey(region)
-                ? uvBlocks[region]
-                : Tuple.Create(0f, 1f); // default fallback
-
-            // Define triangle-local UVs within block
-            Point[] triUVs = new Point[]
-            {
-        new Point(uvRange.Item1, 0),
-        new Point((uvRange.Item1 + uvRange.Item2) / 2, 1),
-        new Point(uvRange.Item2, 0)
-            };
-
-            Point3D[] pts = new Point3D[] { a, b, c };
-
-            StringBuilder face = new StringBuilder("f");
-
-            for (int i = 0; i < 3; i++)
-            {
-                Point3D p = pts[i];
-                verts.Add(string.Format("v {0} {1} {2}", p.X, p.Y, p.Z));
-                uvs.Add(string.Format("vt {0:0.000} {1:0.000}", triUVs[i].X, triUVs[i].Y));
-                face.AppendFormat(" {0}/{1}", vi, vti);
-                vi++;
-                vti++;
-            }
-
-            faces.Add(face.ToString());
-        }
+       
 
 
         #endregion
 
         #region mesh logic
 
-        Vector3 GetNormal(Point3D a, Point3D b, Point3D c)
-        {
-            Vector3 ab = new Vector3((float)(b.X - a.X), (float)(b.Y - a.Y), (float)(b.Z - a.Z));
-            Vector3 ac = new Vector3((float)(c.X - a.X), (float)(c.Y - a.Y), (float)(c.Z - a.Z));
-            Vector3 normal = Vector3.Cross(ab, ac);
-            normal = Vector3.Normalize(normal);
-            return normal;
-        }
+       
 
-        string ClassifyTriangle(Point3D a, Point3D b, Point3D c, string labelA, string labelB, string labelC)
-        {
-            Vector3 normal = GetNormal(a, b, c);
-            Vector3 up = new Vector3(0, 1, 0);
-
-            float dot = Vector3.Dot(normal, up);
-            double angleRad = Math.Acos(dot); // returns double
-            float angle = (float)(angleRad * (180.0 / Math.PI));
-
-            if (labelA == "beach" || labelB == "beach" || labelC == "beach")
-                return "beach";
-            else if (angle < 10f)
-                return "flat";
-            else if (angle < 45f)
-                return "slope";
-            else
-                return "cliff";
-        }
-
-        Dictionary<string, Tuple<float, float>> uvBlockMap = new Dictionary<string, Tuple<float, float>>
-{
-    { "flat", Tuple.Create(0f, 0.33f) },
-    { "slope", Tuple.Create(0.33f, 0.66f) },
-    { "cliff", Tuple.Create(0.66f, 1.0f) },
-    { "beach", Tuple.Create(0.0f, 1.0f) } // optional: assign full range or a custom one
-};
-
-        Point GetUvForTriangleVertex(int localIndex, string region)
-        {
-            Tuple<float, float> range = uvBlockMap[region];
-
-            // Assign triangle-local UVs inside the block
-            // Example: map triangle corners to triangle in block space
-            Point[] localUvs = new Point[]
-            {
-        new Point(range.Item1, 0.0),
-        new Point((range.Item1 + range.Item2) / 2, 1.0),
-        new Point(range.Item2, 0.0)
-            };
-
-            return localUvs[localIndex];
-        }
+        
 
 
         #endregion
