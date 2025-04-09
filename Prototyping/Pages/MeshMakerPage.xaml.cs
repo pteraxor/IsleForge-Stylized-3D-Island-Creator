@@ -74,6 +74,8 @@ namespace Prototyping.Pages
 
         private void CreateMesh_Click(object sender, RoutedEventArgs e)
         {
+            CreateSeperateMeshes();
+            return;
             //CreateLabeledHeightmapLayer(labeledHeightMap);
             //labeledHeightMap
 
@@ -99,8 +101,43 @@ namespace Prototyping.Pages
             _modelGroup.Children.Add(model);
         }
 
+        private void CreateSeperateMeshes()
+        {
+            var meshes = CreateMeshesByLabel(labeledHeightMap);
+            _modelGroup.Children.Clear();
+
+            foreach (var kvp in meshes)
+            {
+                var label = kvp.Key;
+                var mesh = kvp.Value;
+
+                var color = GetColorForLabel(label); // assign color per label
+                var material = new DiffuseMaterial(new SolidColorBrush(color));
+                var model = new GeometryModel3D(mesh, material)
+                {
+                    BackMaterial = material
+                };
+
+                //_modelGroup.Children.Add(new ModelVisual3D { Content = model });
+                _modelGroup.Children.Add(model);
+            }
+
+            Point3D center = GetMeshCenter(labeledHeightMap);
+            SetCameraToMesh(_viewport3D, center);
+
+        }
+
         private void ExportMesh_Click(object sender, RoutedEventArgs e)
         {
+            string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "heightmapGroup.obj");
+
+    
+
+            ExportModelGroupToObj(_modelGroup, path);
+
+            return;
+
+
             if (heightMap == null)
             {
                 MessageBox.Show("Heightmap not loaded.");
@@ -111,7 +148,7 @@ namespace Prototyping.Pages
             //CreateALayerHeightmap(heightMap);
             //return;
 
-            string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "heightmap.obj");
+            //string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "heightmap.obj");
             //ExportHeightmapToObj(heightMap, path);
             ExportLabeledHeightmapToObj(labeledHeightMap, path);
             //ExportLabeledHeightmapWithAngleUVs(labeledHeightMap, path);
@@ -152,6 +189,66 @@ namespace Prototyping.Pages
         #region viewing start
 
         private MeshGeometry3D CreateMeshGeometryFromHeightMap(LabeledValue[,] heightMap)
+        {
+            int width = heightMap.GetLength(0);
+            int height = heightMap.GetLength(1);
+
+            MeshGeometry3D mesh = new MeshGeometry3D();
+
+            // Track index mapping for valid vertices only
+            int[,] indexMap = new int[width, height];
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                    indexMap[x, y] = -1; // -1 means "not added"
+
+            int currentIndex = 0;
+
+            // Step 1: Add valid positions to mesh
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float val = heightMap[x, y].Value;
+                    if (val > 0f)
+                    {
+                        Point3D point = new Point3D(x, val, y);
+                        mesh.Positions.Add(point);
+                        indexMap[x, y] = currentIndex++;
+                    }
+                }
+            }
+
+            // Step 2: Add triangles only if all 4 points exist
+            for (int y = 0; y < height - 1; y++)
+            {
+                for (int x = 0; x < width - 1; x++)
+                {
+                    int i00 = indexMap[x, y];
+                    int i10 = indexMap[x + 1, y];
+                    int i01 = indexMap[x, y + 1];
+                    int i11 = indexMap[x + 1, y + 1];
+
+                    // Ensure all four vertices are valid
+                    if (i00 >= 0 && i10 >= 0 && i01 >= 0 && i11 >= 0)
+                    {
+                        // Triangle 1
+                        mesh.TriangleIndices.Add(i00);
+                        mesh.TriangleIndices.Add(i11);
+                        mesh.TriangleIndices.Add(i10);
+
+                        // Triangle 2
+                        mesh.TriangleIndices.Add(i00);
+                        mesh.TriangleIndices.Add(i01);
+                        mesh.TriangleIndices.Add(i11);
+                    }
+                }
+            }
+
+            return mesh;
+        }
+
+
+        private MeshGeometry3D CreateMeshGeometryFromHeightMap2(LabeledValue[,] heightMap)
         {
             int width = heightMap.GetLength(0);
             int height = heightMap.GetLength(1);
@@ -257,6 +354,74 @@ namespace Prototyping.Pages
         #endregion
 
         #region mesh exporting
+
+        private void ExportModelGroupToObj(Model3DGroup modelGroup, string filePath)
+        {
+            using (StreamWriter writer = new StreamWriter(filePath))
+            {
+                writer.WriteLine("# Exported OBJ from Model3DGroup");
+
+                int vertexOffset = 1;
+
+                for (int modelIndex = 0; modelIndex < modelGroup.Children.Count; modelIndex++)
+                {
+                    if (!(modelGroup.Children[modelIndex] is GeometryModel3D geom))
+                        continue;
+
+                    string groupName = "group_" + modelIndex;
+
+                    if (geom.Material is DiffuseMaterial mat && mat.Brush is SolidColorBrush brush)
+                        groupName = brush.Color.ToString(); // Optional: use color as name
+
+                    if (!(geom.Geometry is MeshGeometry3D mesh))
+                        continue;
+
+                    writer.WriteLine($"g {groupName}");
+
+                    // Write vertices
+                    foreach (var pos in mesh.Positions)
+                        writer.WriteLine($"v {pos.X:0.######} {pos.Y:0.######} {pos.Z:0.######}");
+
+                    // Write normals (optional)
+                    bool hasNormals = mesh.Normals != null && mesh.Normals.Count == mesh.Positions.Count;
+                    if (hasNormals)
+                    {
+                        foreach (var n in mesh.Normals)
+                            writer.WriteLine($"vn {n.X:0.######} {n.Y:0.######} {n.Z:0.######}");
+                    }
+
+                    // Write UVs (optional)
+                    bool hasUVs = mesh.TextureCoordinates != null && mesh.TextureCoordinates.Count == mesh.Positions.Count;
+                    if (hasUVs)
+                    {
+                        foreach (var uv in mesh.TextureCoordinates)
+                            writer.WriteLine($"vt {uv.X:0.######} {uv.Y:0.######}");
+                    }
+
+                    // Write faces
+                    for (int i = 0; i < mesh.TriangleIndices.Count; i += 3)
+                    {
+                        int i0 = mesh.TriangleIndices[i] + vertexOffset;
+                        int i1 = mesh.TriangleIndices[i + 1] + vertexOffset;
+                        int i2 = mesh.TriangleIndices[i + 2] + vertexOffset;
+
+                        if (hasNormals && hasUVs)
+                            writer.WriteLine($"f {i0}/{i0}/{i0} {i1}/{i1}/{i1} {i2}/{i2}/{i2}");
+                        else if (hasUVs)
+                            writer.WriteLine($"f {i0}/{i0} {i1}/{i1} {i2}/{i2}");
+                        else if (hasNormals)
+                            writer.WriteLine($"f {i0}//{i0} {i1}//{i1} {i2}//{i2}");
+                        else
+                            writer.WriteLine($"f {i0} {i1} {i2}");
+                    }
+
+                    vertexOffset += mesh.Positions.Count;
+                }
+            }
+
+            MessageBox.Show("OBJ exported to:\n" + filePath);
+        }
+
 
         private void ExportHeightmapToObj(float[,] heightMap, string filePath)
         {
@@ -381,16 +546,163 @@ namespace Prototyping.Pages
                          .First().Key;
         }
 
-       
+
 
 
         #endregion
 
         #region mesh logic
 
-       
+        private void ApplySimpleNoiseToHeightMap(float strength = 1f)
+        {
+            int width = labeledHeightMap.GetLength(0);
+            int height = labeledHeightMap.GetLength(1);
 
-        
+            Random rand = new Random();
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float original = labeledHeightMap[x, y].Value;
+                    float noise = ((float)rand.NextDouble() - 0.5f) * 2f * strength; // range: [-strength, +strength]
+                    labeledHeightMap[x, y].Value = original + noise;
+                }
+            }
+        }
+
+        private void ApplyNoise_Click(object sender, RoutedEventArgs e)
+        {
+            ApplySimpleNoiseToHeightMap(2.0f); // Adjust strength here
+
+            MeshGeometry3D mesh = CreateMeshGeometryFromHeightMap(labeledHeightMap);
+            Point3D center = GetMeshCenter(labeledHeightMap);
+            SetCameraToMesh(_viewport3D, center);
+
+            var material = new DiffuseMaterial(new SolidColorBrush(Colors.LightGray));
+            var model = new GeometryModel3D(mesh, material)
+            {
+                BackMaterial = material
+            };
+
+            _modelGroup.Children.Clear();
+            _modelGroup.Children.Add(model);
+        }
+
+        Dictionary<string, MeshGeometry3D> labelMeshes = new Dictionary<string, MeshGeometry3D>();
+        Dictionary<string, MeshGeometry3D> seamMeshes = new Dictionary<string, MeshGeometry3D>();
+
+        class MeshBuilder
+        {
+            public MeshGeometry3D Mesh = new MeshGeometry3D();
+            private Dictionary<Point3D, int> vertexIndices = new Dictionary<Point3D, int>();
+
+            public int AddVertex(Point3D pt)
+            {
+                if (vertexIndices.TryGetValue(pt, out int index))
+                    return index;
+
+                index = Mesh.Positions.Count;
+                Mesh.Positions.Add(pt);
+                vertexIndices[pt] = index;
+                return index;
+            }
+
+            public void AddTriangle(Point3D a, Point3D b, Point3D c)
+            {
+                int ia = AddVertex(a);
+                int ib = AddVertex(b);
+                int ic = AddVertex(c);
+                Mesh.TriangleIndices.Add(ia);
+                Mesh.TriangleIndices.Add(ib);
+                Mesh.TriangleIndices.Add(ic);
+            }
+        }
+
+        private Dictionary<string, MeshGeometry3D> CreateMeshesByLabel(LabeledValue[,] map)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
+
+            var labelMeshes = new Dictionary<string, MeshBuilder>();
+            var seamMeshes = new Dictionary<string, MeshBuilder>();
+
+            for (int y = 0; y < height - 1; y++)
+            {
+                for (int x = 0; x < width - 1; x++)
+                {
+                    var v00 = map[x, y];
+                    var v10 = map[x + 1, y];
+                    var v01 = map[x, y + 1];
+                    var v11 = map[x + 1, y + 1];
+
+                    // Skip if any value <= 0
+                    if (v00.Value <= 0 || v10.Value <= 0 || v01.Value <= 0 || v11.Value <= 0)
+                        continue;
+
+                    var labels = new[] { v00.Label, v10.Label, v01.Label, v11.Label };
+                    var labelSet = new HashSet<string>(labels);
+
+                    Point3D p00 = new Point3D(x, v00.Value, y);
+                    Point3D p10 = new Point3D(x + 1, v10.Value, y);
+                    Point3D p01 = new Point3D(x, v01.Value, y + 1);
+                    Point3D p11 = new Point3D(x + 1, v11.Value, y + 1);
+
+                    // CASE 1: all labels match → add to that label's mesh
+                    if (labelSet.Count == 1)
+                    {
+                        string label = v00.Label;
+                        if (!labelMeshes.ContainsKey(label))
+                            labelMeshes[label] = new MeshBuilder();
+
+                        var builder = labelMeshes[label];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                    }
+                    // CASE 2: mixed labels → add to a seam mesh
+                    else
+                    {
+                        // sort labels to create a consistent seam key (e.g. "beach")
+                        string seamKey = string.Join("_", labelSet.OrderBy(l => l));
+                        if (!seamMeshes.ContainsKey(seamKey))
+                            seamMeshes[seamKey] = new MeshBuilder();
+
+                        var builder = seamMeshes[seamKey];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                    }
+                }
+            }
+
+            // Combine all meshbuilders into one dictionary
+            var finalMeshes = new Dictionary<string, MeshGeometry3D>();
+
+            foreach (var kvp in labelMeshes)
+                finalMeshes[kvp.Key] = kvp.Value.Mesh;
+
+            foreach (var kvp in seamMeshes)
+                finalMeshes["seam_" + kvp.Key] = kvp.Value.Mesh;
+
+            return finalMeshes;
+        }
+
+        private Color GetColorForLabel(string label)
+        {
+            // You can use fixed colors for known labels:
+            if (label == "mid") return Colors.Green;
+            if (label == "base") return Colors.Green;
+            if (label == "ramp") return Colors.Green;
+            if (label == "top") return Colors.Green;
+            if (label == "beach") return Colors.Goldenrod;
+            if (label == "cliff") return Colors.Gray;
+
+            // Or generate consistent colors for unknown labels
+            int hash = label.GetHashCode();
+            byte r = (byte)(hash & 0xFF);
+            byte g = (byte)((hash >> 8) & 0xFF);
+            byte b = (byte)((hash >> 16) & 0xFF);
+            return Color.FromRgb(r, g, b);
+        }
 
 
         #endregion
