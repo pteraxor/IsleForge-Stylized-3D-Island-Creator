@@ -89,6 +89,166 @@ namespace Prototyping.Pages
             bottomAllOnes = GetBottom(footprint);
         }
 
+        private void ProcessMap_ClickTest(object sender, RoutedEventArgs e)
+        {
+
+            CreateALayer(baseLayer, Colors.Red);
+            var HeightBaseLayer = ConvertArrayToHeight(baseLayer, BASEHEIGHT);
+            //CreateALayerHeightmap(HeightBaseLayer);
+
+            CreateALayer(midLayer, Colors.Green);
+            var HeightMidLayer = ConvertArrayToHeight(midLayer, MIDHEIGHT);
+            //CreateALayerHeightmap(HeightMidLayer);
+
+            CreateALayer(topLayer, Colors.Blue);
+            var HeightTopLayer = ConvertArrayToHeight(topLayer, TOPHEIGHT);
+            //CreateALayerHeightmap(HeightTopLayer);
+
+            midBaseEdges = DetectLogicalEdges(baseLayer, midLayer, topLayer);
+            //CreateALayer(midBaseEdges, Colors.Gold);
+
+            topMidEdges = DetectEdgeBetweenAdjacentLayers(midLayer, topLayer);
+            //ExportLayerToText("topMidEdges.txt", topMidEdges);
+            //CreateALayer(topMidEdges, Colors.Indigo);
+
+            bottomBaseEdges = DetectSobelEdges(baseLayer);
+            //CreateALayer(bottomBaseEdges, Colors.White);
+
+            topBaseEdges = DetectLogicalEdges(topLayer, baseLayer, midLayer);
+            //var matchedbottomBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, bottomBaseEdges);
+            //CreateALayer(topBaseEdges, Colors.Lime);
+            
+
+            #region top base
+
+            //createing the top base edges
+            var sub1 = SubtractWithRadius(topBaseEdges, topMidEdges, 2);
+            var sub2 = SubtractWithRadius(sub1, midBaseEdges, 2);
+            var topBaseEdgesWork = sub2;
+            var matchedTopBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, topBaseEdgesWork);
+            //var expandedEdges = ExpandEdgeInfluence(matchedTopBaseEdges); // ExpandEdgeInfluenceClean
+            var expandedTopBaseEdges = ExpandEdgeInfluenceClean(matchedTopBaseEdges, SMALLER_RADIUS, LARGER_RADIUS); // 
+
+            //CreateALayer(expandedTopBaseEdges, Colors.Lime);
+
+            var TopBaseBlendResult = BlendMaskOverwrite(baseLayer, topLayer, expandedTopBaseEdges, BASEHEIGHT, TOPHEIGHT);
+            //ExportLayerToText("blendResult.txt", TopBaseBlendResult);
+            var TopBaseSmoothed = SmoothVertices2D(TopBaseBlendResult, factor: 0.7f, iterations: 70);
+            //CreateALayerHeightmap(TopBaseSmoothed);
+
+            CreateALayerHeightmap(TopBaseBlendResult);
+            #endregion
+
+            #region topmid
+            // match edges to user drawn edges
+            var matchedTopMidEdges = MatchEdgeLabelsByProximity(edgeLayer, topMidEdges);
+            // expand edge redius
+            var expandedTopMidEdges = ExpandEdgeInfluenceClean(matchedTopMidEdges, SMALLER_RADIUS, LARGER_RADIUS);
+            // create mask area both heights
+            var TopMidBlendResult = BlendMaskOverwrite(midLayer, topLayer, expandedTopMidEdges, MIDHEIGHT, TOPHEIGHT);
+            //smooth heights together
+            var TopMidSmoothed = SmoothVertices2D(TopMidBlendResult, factor: 0.7f, iterations: 70);
+
+            CreateALayerHeightmap(TopMidBlendResult);
+            //CreateALayerHeightmap(TopMidSmoothed);
+            //CreateALayer(expandedTopMidEdges, Colors.Indigo);
+            //CreateALayer(topMidEdges, Colors.Gold);
+
+            #endregion
+
+            #region midbase
+            sub1 = SubtractWithRadius(midBaseEdges, topMidEdges, 2);//topMidEdges
+            var topMidEdgesWork = sub1;
+            // match edges to user drawn edges
+            var matchedmidBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, topMidEdgesWork);
+            // expand edge redius
+            var expandedmidBaseEdges = ExpandEdgeInfluenceClean(matchedmidBaseEdges, SMALLER_RADIUS, LARGER_RADIUS);
+            //expandedmidBaseEdges = SubtractWithRadius(expandedmidBaseEdges, footprint, 1); //now this seems to bleed over a little trying to fix that
+            // create mask area both heights
+            var midBaseBlendResult = BlendMaskOverwrite(baseLayer, midLayer, expandedmidBaseEdges, BASEHEIGHT, MIDHEIGHT);
+            //smooth heights together
+            var midBaseSmoothed = SmoothVertices2D(midBaseBlendResult, factor: 0.7f, iterations: 70);
+
+            CreateALayerHeightmap(midBaseBlendResult);
+            //CreateALayerHeightmap(midBaseSmoothed);
+            //CreateALayer(midBaseEdges, Colors.Gold);
+            // CreateALayer(expandedmidBaseEdges, Colors.Gold);
+
+            #endregion
+
+            #region basefloor
+            //sub1 = SubtractWithRadius(midBaseEdges, topMidEdges, 2);//topMidEdges
+            var bottomBaseEdgesWork = bottomBaseEdges;
+            // match edges to user drawn edges
+            var matchedBottomBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, bottomBaseEdgesWork);
+            // expand edge redius
+            var expandedBottomBaseEdges = ExpandEdgeInfluenceClean(matchedBottomBaseEdges, (int)(SMALLER_RADIUS * 2f), (int)(LARGER_RADIUS * 2f));
+            // create mask area both heights
+            var BottomBaseBlendResult = BlendMaskOverwrite(bottomAllOnes, baseLayer, expandedBottomBaseEdges, 0f, BASEHEIGHT);
+            //smooth heights together
+            var BottomBaseSmoothed = SmoothVertices2D(BottomBaseBlendResult, factor: 0.7f, iterations: 70, ignoreZeroes: false);
+
+            CreateALayerHeightmap(BottomBaseBlendResult);
+            //CreateALayerHeightmap(BottomBaseSmoothed);
+            //CreateALayer(expandedBottomBaseEdges, Colors.White);
+
+            #endregion
+
+            return;
+            //fresh start for computed height map
+            _heightMapCanvas.Children.Clear();
+
+            //create the basemap as one file
+            solvedMap = HeightBaseLayer;
+            solvedMap = OverlayMaps(solvedMap, HeightMidLayer);
+            solvedMap = OverlayMaps(solvedMap, HeightTopLayer);
+            solvedMap = SmartOverlayWithMask(solvedMap, TopBaseSmoothed, baseLayer);
+            solvedMap = SmartOverlayWithMask(solvedMap, TopMidSmoothed, baseLayer);
+            solvedMap = SmartOverlayWithMask(solvedMap, midBaseSmoothed, baseLayer);
+            solvedMap = OverlayMaps(solvedMap, BottomBaseSmoothed);
+            //solvedMap = SmartOverlayWithMask(solvedMap, TopBaseSmoothed, baseLayer);
+
+
+            solvedMap = RemoveMaskingNegatives(solvedMap);
+            //var solvedMapSmoothed = solvedMap;
+            var solvedMapSmoothed = SmoothVertices2D(solvedMap, factor: 0.4f, iterations: 3, ignoreZeroes: false);
+
+            ExportLayerToText("solvedMap.txt", solvedMapSmoothed);
+
+            //CreateALayerHeightmap(solvedMapSmoothed);
+            MapDataStore.FinalHeightMap = solvedMapSmoothed;
+
+
+            ///////////
+            ///
+
+            //change arrays to labeled objects
+            var labeledBaseMap = CreateLabeledMap(HeightBaseLayer, "Base");
+            var labeledMidLayer = CreateLabeledMap(HeightMidLayer, "Mid");
+            var labeledTopLayer = CreateLabeledMap(HeightTopLayer, "Top");
+            var labeledTopBaseSmoothed = CreateLabeledMap(TopBaseSmoothed, "ramp");
+            var labeledTopMidSmoothed = CreateLabeledMap(TopMidSmoothed, "ramp");
+            var labeledmidBaseSmoothed = CreateLabeledMap(midBaseSmoothed, "ramp");
+            var labeledBottomBaseSmoothed = CreateLabeledMap(BottomBaseSmoothed, "beach");
+
+            var solvedMapWithLabels = labeledBaseMap;
+            solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledMidLayer);
+            solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledTopLayer);
+            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledTopBaseSmoothed, baseLayer);
+            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledTopMidSmoothed, baseLayer);
+            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledmidBaseSmoothed, baseLayer);
+            solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledBottomBaseSmoothed);
+
+            RemoveNegativesFromLabeledMap(solvedMapWithLabels);
+
+            SmoothLabeledMap(solvedMapWithLabels, 0.4f, 3, ignoreZeroes: false);
+
+            SaveLabeledMapToText("solvedMapWithLabels.txt", solvedMapWithLabels);
+            MapDataStore.AnnotatedHeightMap = solvedMapWithLabels;
+
+            CreateLabeledHeightmapLayer(solvedMapWithLabels);
+        }
+
         private void ProcessMap_Click(object sender, RoutedEventArgs e)
         {
 
@@ -183,6 +343,7 @@ namespace Prototyping.Pages
 
             #endregion
 
+            return;
             //fresh start for computed height map
             _heightMapCanvas.Children.Clear();
 
@@ -203,7 +364,7 @@ namespace Prototyping.Pages
 
             ExportLayerToText("solvedMap.txt", solvedMapSmoothed);
 
-//CreateALayerHeightmap(solvedMapSmoothed);
+            //CreateALayerHeightmap(solvedMapSmoothed);
             MapDataStore.FinalHeightMap = solvedMapSmoothed;
 
 
@@ -231,7 +392,8 @@ namespace Prototyping.Pages
 
             SmoothLabeledMap(solvedMapWithLabels, 0.4f, 3, ignoreZeroes: false);
 
-            SaveLabeledMapToText(" solvedMapWithLabels.txt", solvedMapWithLabels);
+            SaveLabeledMapToText("solvedMapWithLabels.txt", solvedMapWithLabels);
+            MapDataStore.AnnotatedHeightMap = solvedMapWithLabels;
 
             CreateLabeledHeightmapLayer(solvedMapWithLabels);
         }

@@ -32,6 +32,7 @@ namespace Prototyping.Pages
 
         private float[,] heightMap;
         private LabeledValue[,] labeledHeightMap;
+        private LabeledValue[,] originalHeightMap;
         private float MAXVALUE = 100f;
 
         private Viewport3D _viewport3D;
@@ -58,7 +59,7 @@ namespace Prototyping.Pages
             TESTINGLOAD();
             //NORMALLOAD();
 
-
+            originalHeightMap = labeledHeightMap; //so we have a backup
         }
 
         private void NORMALLOAD()
@@ -131,7 +132,7 @@ namespace Prototyping.Pages
         {
             string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "heightmapGroup.obj");
 
-    
+
 
             ExportModelGroupToObj(_modelGroup, path);
 
@@ -152,6 +153,62 @@ namespace Prototyping.Pages
             //ExportHeightmapToObj(heightMap, path);
             ExportLabeledHeightmapToObj(labeledHeightMap, path);
             //ExportLabeledHeightmapWithAngleUVs(labeledHeightMap, path);
+        }
+
+        private void ResetNoise_Click(object sender, RoutedEventArgs e)
+        {
+            //labeledHeightMap = originalHeightMap; //reset
+            //reload the height map
+            ResetMap();
+
+            MeshGeometry3D mesh = CreateMeshGeometryFromHeightMap(labeledHeightMap);
+            Point3D center = GetMeshCenter(labeledHeightMap);
+            SetCameraToMesh(_viewport3D, center);
+
+            var material = new DiffuseMaterial(new SolidColorBrush(Colors.LightGray));
+            var model = new GeometryModel3D(mesh, material)
+            {
+                BackMaterial = material
+            };
+
+            _modelGroup.Children.Clear();
+            _modelGroup.Children.Add(model);
+        }
+
+        private void ResetMap()
+        {
+            //this will need to be done a different way later on
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            labeledHeightMap = LoadLabeledMapFromText(System.IO.Path.Combine(baseDir, "solvedMapWithLabels.txt"));
+        }
+
+
+        private void ApplyNoise_Click(object sender, RoutedEventArgs e)
+        {
+            //start noise application by reseting map
+            ResetMap();
+
+            float strength = HelperExtensions.GetFloatFromTag(this, "NoiseStrength", .2f);
+            float scale = HelperExtensions.GetFloatFromTag(this, "NoiseScale", 0.1f);
+            int octaves = (int)HelperExtensions.GetFloatFromTag(this, "NoiseOctaves", 4f);
+            float lacunarity = HelperExtensions.GetFloatFromTag(this, "NoiseLacunarity", 2f);
+
+            ApplyPerlinNoiseToHeightMap(strength, scale, octaves, 0.5f, lacunarity);
+            //ApplySimpleNoiseToHeightMap(.2f); // Adjust strength here
+            //ApplyPerlinNoiseToHeightMap(strength: .2f, scale: 0.1f, octaves: 4, persistence: 0.5f, lacunarity: 2f);
+
+            MeshGeometry3D mesh = CreateMeshGeometryFromHeightMap(labeledHeightMap);
+            Point3D center = GetMeshCenter(labeledHeightMap);
+            SetCameraToMesh(_viewport3D, center);
+
+            var material = new DiffuseMaterial(new SolidColorBrush(Colors.LightGray));
+            var model = new GeometryModel3D(mesh, material)
+            {
+                BackMaterial = material
+            };
+
+            _modelGroup.Children.Clear();
+            _modelGroup.Children.Add(model);
         }
 
         #region viewing helpers
@@ -565,29 +622,44 @@ namespace Prototyping.Pages
                 for (int x = 0; x < width; x++)
                 {
                     float original = labeledHeightMap[x, y].Value;
-                    float noise = ((float)rand.NextDouble() - 0.5f) * 2f * strength; // range: [-strength, +strength]
-                    labeledHeightMap[x, y].Value = original + noise;
+                    if (original > 0f) //I can't add noise to the ocean floor
+                    {
+                        float noise = ((float)rand.NextDouble() - 0.5f) * 2f * strength; // range: [-strength, +strength]
+                        labeledHeightMap[x, y].Value = original + noise;
+                    }
+
                 }
             }
         }
 
-        private void ApplyNoise_Click(object sender, RoutedEventArgs e)
+        private void ApplyPerlinNoiseToHeightMap(float strength = 1f, float scale = 0.1f, int octaves = 4, float persistence = 0.5f, float lacunarity = 2f)
         {
-            ApplySimpleNoiseToHeightMap(2.0f); // Adjust strength here
+            int width = labeledHeightMap.GetLength(0);
+            int height = labeledHeightMap.GetLength(1);
 
-            MeshGeometry3D mesh = CreateMeshGeometryFromHeightMap(labeledHeightMap);
-            Point3D center = GetMeshCenter(labeledHeightMap);
-            SetCameraToMesh(_viewport3D, center);
+            // Replace Unity random with System.Random
+            Random rand = new Random();
+            float offsetX = (float)(rand.NextDouble() * 10000f);
+            float offsetY = (float)(rand.NextDouble() * 10000f);
 
-            var material = new DiffuseMaterial(new SolidColorBrush(Colors.LightGray));
-            var model = new GeometryModel3D(mesh, material)
+            // Use your helper
+            var noiseGen = new Prototyping.Helpers.NoiseGenerator(rand.Next());
+
+            for (int y = 0; y < height; y++)
             {
-                BackMaterial = material
-            };
-
-            _modelGroup.Children.Clear();
-            _modelGroup.Children.Add(model);
+                for (int x = 0; x < width; x++)
+                {
+                    float original = labeledHeightMap[x, y].Value;
+                    if (original > 0f) // Don't add noise to ocean floor
+                    {
+                        float noise = noiseGen.FractalNoise(x + offsetX, y + offsetY, octaves, scale, persistence, lacunarity);
+                        labeledHeightMap[x, y].Value = original + noise * strength;
+                    }
+                }
+            }
         }
+
+        
 
         Dictionary<string, MeshGeometry3D> labelMeshes = new Dictionary<string, MeshGeometry3D>();
         Dictionary<string, MeshGeometry3D> seamMeshes = new Dictionary<string, MeshGeometry3D>();
@@ -626,6 +698,124 @@ namespace Prototyping.Pages
 
             var labelMeshes = new Dictionary<string, MeshBuilder>();
             var seamMeshes = new Dictionary<string, MeshBuilder>();
+            var uniqueLabels = new HashSet<string>();
+
+            double cliffThreshold = 110.0; // degrees
+            double seamThreshold = 70.0;  // degrees
+
+            for (int y = 0; y < height - 1; y++)
+            {
+                for (int x = 0; x < width - 1; x++)
+                {
+                    var v00 = map[x, y];
+                    var v10 = map[x + 1, y];
+                    var v01 = map[x, y + 1];
+                    var v11 = map[x + 1, y + 1];
+
+                    if (v00.Value <= 0 || v10.Value <= 0 || v01.Value <= 0 || v11.Value <= 0)
+                        continue;
+
+                    var labels = new[] { v00.Label, v10.Label, v01.Label, v11.Label };
+                    foreach (var label in labels)
+                        uniqueLabels.Add(label);
+
+                    var labelSet = new HashSet<string>(labels);
+
+                    Point3D p00 = new Point3D(x, v00.Value, y);
+                    Point3D p10 = new Point3D(x + 1, v10.Value, y);
+                    Point3D p01 = new Point3D(x, v01.Value, y + 1);
+                    Point3D p11 = new Point3D(x + 1, v11.Value, y + 1);
+
+                    // Calculate average face normal and angle
+                    Vector3D normal = CalculateAverageNormal(p00, p11, p10, p01);
+                    normal.Normalize();
+                    Vector3D up = new Vector3D(0, 1, 0);
+
+                    double dot = Vector3D.DotProduct(normal, up);
+                    dot = Math.Max(-1.0, Math.Min(1.0, dot)); // Clamp for acos
+                    double angleFromUp = Math.Acos(dot) * (180.0 / Math.PI);
+
+                    // === Tier 1: cliff ===
+                    if (angleFromUp >= cliffThreshold)
+                    {
+                        string seamKey = string.Join("_", labelSet.OrderBy(l => l));
+                        if (!seamMeshes.ContainsKey(seamKey))
+                            seamMeshes[seamKey] = new MeshBuilder();
+
+                        var builder = seamMeshes[seamKey];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                        continue;
+                    }
+
+                    // === Tier 2: flat/moderate ===
+                    if (labelSet.Count == 1)
+                    {
+                        // All labels match → assign normally
+                        string label = v00.Label;
+                        if (!labelMeshes.ContainsKey(label))
+                            labelMeshes[label] = new MeshBuilder();
+
+                        var builder = labelMeshes[label];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                    }
+                    else
+                    {
+                        // Mixed labels on a non-cliff tile
+                        if (angleFromUp >= seamThreshold)
+                        {
+                            // still somewhat steep → seam
+                            string seamKey = string.Join("_", labelSet.OrderBy(l => l));
+                            if (!seamMeshes.ContainsKey(seamKey))
+                                seamMeshes[seamKey] = new MeshBuilder();
+
+                            var builder = seamMeshes[seamKey];
+                            builder.AddTriangle(p00, p11, p10);
+                            builder.AddTriangle(p00, p01, p11);
+                        }
+                        else
+                        {
+                            // assign to most common label
+                            string fallbackLabel = GetMostCommonLabel(labels);
+                            if (!labelMeshes.ContainsKey(fallbackLabel))
+                                labelMeshes[fallbackLabel] = new MeshBuilder();
+
+                            var builder = labelMeshes[fallbackLabel];
+                            builder.AddTriangle(p00, p11, p10);
+                            builder.AddTriangle(p00, p01, p11);
+                        }
+                    }
+                }
+            }
+
+            // Merge all
+            var finalMeshes = new Dictionary<string, MeshGeometry3D>();
+
+            foreach (var kvp in labelMeshes)
+                finalMeshes[kvp.Key] = kvp.Value.Mesh;
+
+            foreach (var kvp in seamMeshes)
+                finalMeshes["seam_" + kvp.Key] = kvp.Value.Mesh;
+
+            // Debug summary
+            string labelList = string.Join(", ", uniqueLabels.OrderBy(l => l));
+            Debug.WriteLine("Unique labels found in mesh: " + labelList);
+
+            return finalMeshes;
+        }
+
+
+        private Dictionary<string, MeshGeometry3D> CreateMeshesByLabelAngleFirst(LabeledValue[,] map)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
+
+            var labelMeshes = new Dictionary<string, MeshBuilder>();
+            var seamMeshes = new Dictionary<string, MeshBuilder>();
+            var uniqueLabels = new HashSet<string>();
+
+            double angleThreshold = 90.0; // degrees
 
             for (int y = 0; y < height - 1; y++)
             {
@@ -641,6 +831,228 @@ namespace Prototyping.Pages
                         continue;
 
                     var labels = new[] { v00.Label, v10.Label, v01.Label, v11.Label };
+                    foreach (var label in labels)
+                        uniqueLabels.Add(label);
+
+                    var labelSet = new HashSet<string>(labels);
+
+                    Point3D p00 = new Point3D(x, v00.Value, y);
+                    Point3D p10 = new Point3D(x + 1, v10.Value, y);
+                    Point3D p01 = new Point3D(x, v01.Value, y + 1);
+                    Point3D p11 = new Point3D(x + 1, v11.Value, y + 1);
+
+                    // === 1. ANGLE FIRST ===
+                    Vector3D normal = CalculateAverageNormal(p00, p11, p10, p01);
+                    normal.Normalize();
+
+                    Vector3D up = new Vector3D(0, 1, 0);
+                    double dot = Vector3D.DotProduct(normal, up);
+                    dot = Math.Max(-1.0, Math.Min(1.0, dot)); // clamp for acos
+                    double angleFromUp = Math.Acos(dot) * (180.0 / Math.PI);
+
+                    if (angleFromUp >= angleThreshold)
+                    {
+                        // === Steep → goes into seam mesh ===
+                        string seamKey = string.Join("_", labelSet.OrderBy(l => l));
+                        if (!seamMeshes.ContainsKey(seamKey))
+                            seamMeshes[seamKey] = new MeshBuilder();
+
+                        var builder = seamMeshes[seamKey];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                    }
+                    else
+                    {
+                        // === Not steep → go into labeled terrain ===
+                        string targetLabel;
+
+                        if (labelSet.Count == 1)
+                        {
+                            // all the same
+                            targetLabel = v00.Label;
+                        }
+                        else
+                        {
+                            // mixed: fallback to most common label
+                            targetLabel = GetMostCommonLabel(labels);
+                        }
+
+                        if (!labelMeshes.ContainsKey(targetLabel))
+                            labelMeshes[targetLabel] = new MeshBuilder();
+
+                        var builder = labelMeshes[targetLabel];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                    }
+                }
+            }
+
+            // Merge all the meshes
+            var finalMeshes = new Dictionary<string, MeshGeometry3D>();
+
+            foreach (var kvp in labelMeshes)
+                finalMeshes[kvp.Key] = kvp.Value.Mesh;
+
+            foreach (var kvp in seamMeshes)
+                finalMeshes["seam_" + kvp.Key] = kvp.Value.Mesh;
+
+            // Debug label summary
+            string labelList = string.Join(", ", uniqueLabels.OrderBy(l => l));
+            Debug.WriteLine("Unique labels found in mesh: " + labelList);
+
+            return finalMeshes;
+        }
+
+
+        private Dictionary<string, MeshGeometry3D> CreateMeshesByLabelAngleSecond(LabeledValue[,] map)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
+
+            var labelMeshes = new Dictionary<string, MeshBuilder>();
+            var seamMeshes = new Dictionary<string, MeshBuilder>();
+            var uniqueLabels = new HashSet<string>();
+
+            double angleThreshold = 60.0; // degrees
+
+            for (int y = 0; y < height - 1; y++)
+            {
+                for (int x = 0; x < width - 1; x++)
+                {
+                    var v00 = map[x, y];
+                    var v10 = map[x + 1, y];
+                    var v01 = map[x, y + 1];
+                    var v11 = map[x + 1, y + 1];
+
+                    // Skip if any value <= 0
+                    if (v00.Value <= 0 || v10.Value <= 0 || v01.Value <= 0 || v11.Value <= 0)
+                        continue;
+
+                    var labels = new[] { v00.Label, v10.Label, v01.Label, v11.Label };
+                    foreach (var label in labels)
+                        uniqueLabels.Add(label);
+
+                    var labelSet = new HashSet<string>(labels);
+
+                    Point3D p00 = new Point3D(x, v00.Value, y);
+                    Point3D p10 = new Point3D(x + 1, v10.Value, y);
+                    Point3D p01 = new Point3D(x, v01.Value, y + 1);
+                    Point3D p11 = new Point3D(x + 1, v11.Value, y + 1);
+
+                    // CASE 1: all labels match → add to that label's mesh
+                    if (labelSet.Count == 1)
+                    {
+                        string label = v00.Label;
+                        if (!labelMeshes.ContainsKey(label))
+                            labelMeshes[label] = new MeshBuilder();
+
+                        var builder = labelMeshes[label];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                    }
+                    // CASE 2: mixed labels, depends on if the angle is steep
+                    else
+                    {
+                        // Mixed labels
+
+                        Vector3D normal = CalculateAverageNormal(p00, p11, p10, p01);
+                        normal.Normalize();
+
+                        Vector3D up = new Vector3D(0, 1, 0);
+                        double dot = Vector3D.DotProduct(normal, up);
+                        dot = Math.Max(-1.0, Math.Min(1.0, dot)); // clamp to valid acos range
+                        double angleFromUp = Math.Acos(dot) * (180.0 / Math.PI);
+
+                        if (angleFromUp >= angleThreshold)
+                        {
+                            // Steep: add to seam mesh
+                            string seamKey = string.Join("_", labelSet.OrderBy(l => l));
+                            if (!seamMeshes.ContainsKey(seamKey))
+                                seamMeshes[seamKey] = new MeshBuilder();
+
+                            var builder = seamMeshes[seamKey];
+                            builder.AddTriangle(p00, p11, p10);
+                            builder.AddTriangle(p00, p01, p11);
+                        }
+                        else
+                        {
+                            // Not steep: assign to one of the label meshes (e.g. most common label)
+                            string fallbackLabel = GetMostCommonLabel(labels);
+                            Debug.WriteLine($"fallback label is : {fallbackLabel}");
+                            fallbackLabel = "WEIRDLOL";
+                            if (!labelMeshes.ContainsKey(fallbackLabel))
+                                labelMeshes[fallbackLabel] = new MeshBuilder();
+
+                            var builder = labelMeshes[fallbackLabel];
+                            builder.AddTriangle(p00, p11, p10);
+                            builder.AddTriangle(p00, p01, p11);
+                        }
+                    }
+
+                }
+            }
+
+            
+
+            // Combine all meshbuilders into one dictionary
+            var finalMeshes = new Dictionary<string, MeshGeometry3D>();
+
+            foreach (var kvp in labelMeshes)
+                finalMeshes[kvp.Key] = kvp.Value.Mesh;
+
+            foreach (var kvp in seamMeshes)
+                finalMeshes["seam_" + kvp.Key] = kvp.Value.Mesh;
+
+            // Debug label summary
+            string labelList = string.Join(", ", uniqueLabels.OrderBy(l => l));
+            Debug.WriteLine("Unique labels found in mesh: " + labelList);
+
+            return finalMeshes;
+        }
+
+        private string GetMostCommonLabel(string[] labels)
+        {
+            var counts = new Dictionary<string, int>();
+            foreach (var label in labels)
+            {
+                if (!counts.ContainsKey(label))
+                    counts[label] = 0;
+                counts[label]++;
+            }
+
+            // Return the most frequent one
+            return counts.OrderByDescending(kv => kv.Value).First().Key;
+        }
+
+
+        private Dictionary<string, MeshGeometry3D> CreateMeshesByLabelSeam1(LabeledValue[,] map)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
+
+            var labelMeshes = new Dictionary<string, MeshBuilder>();
+            var seamMeshes = new Dictionary<string, MeshBuilder>();
+
+            var uniqueLabels = new HashSet<string>();
+
+            for (int y = 0; y < height - 1; y++)
+            {
+                for (int x = 0; x < width - 1; x++)
+                {
+                    var v00 = map[x, y];
+                    var v10 = map[x + 1, y];
+                    var v01 = map[x, y + 1];
+                    var v11 = map[x + 1, y + 1];
+
+                    // Skip if any value <= 0
+                    if (v00.Value <= 0 || v10.Value <= 0 || v01.Value <= 0 || v11.Value <= 0)
+                        continue;
+
+                    var labels = new[] { v00.Label, v10.Label, v01.Label, v11.Label };
+                    //debugging labels
+                    foreach (var label in labels)
+                        uniqueLabels.Add(label);
+
                     var labelSet = new HashSet<string>(labels);
 
                     Point3D p00 = new Point3D(x, v00.Value, y);
@@ -683,18 +1095,47 @@ namespace Prototyping.Pages
             foreach (var kvp in seamMeshes)
                 finalMeshes["seam_" + kvp.Key] = kvp.Value.Mesh;
 
+            //debugging all labels
+            string labelList = string.Join(", ", uniqueLabels.OrderBy(l => l));
+            Debug.WriteLine("Unique labels found in mesh: " + labelList);
+
             return finalMeshes;
         }
 
+        private Vector3D CalculateAverageNormal(Point3D p0, Point3D p1, Point3D p2, Point3D p3)
+        {
+            // Triangle 1: p0 → p1 → p2
+            Vector3D n1 = Vector3D.CrossProduct(p1 - p0, p2 - p0);
+            n1.Normalize();
+
+            // Triangle 2: p0 → p2 → p3
+            Vector3D n2 = Vector3D.CrossProduct(p2 - p0, p3 - p0);
+            n2.Normalize();
+
+            Vector3D average = n1 + n2;
+            if (average.Length > 0)
+                average.Normalize();
+
+            return average;
+        }
+
+
         private Color GetColorForLabel(string label)
         {
+
+            //Base, beach, Mid, None, ramp, Top
             // You can use fixed colors for known labels:
-            if (label == "mid") return Colors.Green;
-            if (label == "base") return Colors.Green;
+            if (label == "Mid") return Colors.Green;
+            if (label == "Base") return Colors.Green;
             if (label == "ramp") return Colors.Green;
-            if (label == "top") return Colors.Green;
+            if (label == "Top") return Colors.Green;
+            if (label == "none") return Colors.Blue;
             if (label == "beach") return Colors.Goldenrod;
             if (label == "cliff") return Colors.Gray;
+            //WEIRDLOL
+            if (label == "WEIRDLOL") return Colors.Magenta;
+
+            return Colors.Gray; //defaulting here for now instead of the hash
 
             // Or generate consistent colors for unknown labels
             int hash = label.GetHashCode();

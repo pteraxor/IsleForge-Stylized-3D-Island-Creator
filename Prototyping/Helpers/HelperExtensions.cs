@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows.Media;
 using System.Windows;
 using System.Windows.Media.Imaging;
+using System.Windows.Controls;
 
 namespace Prototyping.Helpers
 {
@@ -28,6 +29,13 @@ namespace Prototyping.Helpers
             return null;
         }
 
+        public static float GetFloatFromTag(DependencyObject parent, string tag, float fallback)
+        {
+            var input = FindElementByTag<TextBox>(parent, tag);
+            if (input != null && float.TryParse(input.Text, out float value))
+                return value;
+            return fallback;
+        }
 
     }
 }
