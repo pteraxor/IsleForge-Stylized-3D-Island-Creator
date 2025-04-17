@@ -1072,6 +1072,16 @@ namespace Prototyping.Pages
             MeshDataStore.Meshes = finalMeshes;
             MeshDataStore.OriginalMeshPositions = originalMeshPositions;
 
+            //pass the camera along as well
+            var camera = _viewport3D.Camera as PerspectiveCamera;
+
+            if (camera != null)
+            {
+                MeshDataStore.CameraPosition = camera.Position;
+                MeshDataStore.CameraLookDirection = camera.LookDirection;
+                MeshDataStore.CameraUpDirection = camera.UpDirection;
+            }
+
             //MeshDataStore.Meshes = CreateMeshesByLabel(labeledHeightMap);
             //MeshDataStore.OriginalMeshPositions = originalMeshPositions;
             //for when it's time to to the next step. need to consider how to check for when it's okay to do so

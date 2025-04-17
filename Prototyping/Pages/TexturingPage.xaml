@@ -19,7 +19,8 @@
         <!-- Left Tools Panel -->
         <local:BaseLayout.LeftContent>
             <StackPanel>
-                <!--<Button Content="Upload Texture" Margin="0,15,0,0" Click="UploadTexture_Click"/> -->
+                <Button Content="Upload Texture" Margin="0,15,0,0" Click="UploadTexture_Click"/>
+                <Button Content="Reset Texture" Margin="0,15,0,0" Click="ResetTexture_Click"/>
 
             </StackPanel>
         </local:BaseLayout.LeftContent>

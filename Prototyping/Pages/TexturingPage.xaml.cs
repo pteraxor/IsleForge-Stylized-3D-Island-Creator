@@ -17,6 +17,7 @@ using System.Diagnostics;
 using Prototyping.Helpers;
 using System.Windows.Media.Media3D;
 using System.IO;
+using Prototyping.Dialogues;
 
 namespace Prototyping.Pages
 {
@@ -32,6 +33,14 @@ namespace Prototyping.Pages
         private Viewport3D _viewport3D;
         private Model3DGroup _modelGroup;
 
+        private ImageBrush _grassBrush;
+        private ImageBrush _rockBrush;
+        private ImageBrush _sandBrush;
+
+        private const string DefaultGrass = "GrassAlbedo.png";
+        private const string DefaultRock = "RockAlbedo.png";
+        private const string DefaultSand = "SandAlbedo.png";
+
         public TexturingPage()
         {
             InitializeComponent();
@@ -45,6 +54,11 @@ namespace Prototyping.Pages
 
             _MapCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "MapCanvas");
 
+            //load default textures
+            _grassBrush = LoadTilingBrush(DefaultGrass);
+            _rockBrush = LoadTilingBrush(DefaultRock);
+            _sandBrush = LoadTilingBrush(DefaultSand);
+
             //this worked fine on the previous page
             //_viewport3D = FindVisualChild<Viewport3D>(this);
             //_modelGroup = new Model3DGroup();
@@ -54,6 +68,126 @@ namespace Prototyping.Pages
 
             
             _modelGroup.Children.Clear();
+
+            
+            
+            foreach (var kvp in _meshes)
+            {
+                string label = kvp.Key;
+                var mesh = kvp.Value;
+
+                ApplyTextureCoordinates(mesh, 0.1); // UVs scaled for tiling
+
+                var material = new DiffuseMaterial(GetTextureForLabel(label));
+
+                var model = new GeometryModel3D(mesh, material)
+                {
+                    BackMaterial = material
+                };
+
+                _modelGroup.Children.Add(model);
+            }
+            
+
+
+            SetCameraToMesh();
+        }
+
+        #region custom texturing
+
+        private void UploadTexture_Click(object sender, RoutedEventArgs e)
+        {
+            //UploadTextureForType("grass");
+            var dialog = new TextureTargetDialog
+            {
+                Owner = Window.GetWindow(this)
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                string selectedType = dialog.SelectedType;
+                if (!string.IsNullOrEmpty(selectedType))
+                {
+                    UploadTextureForType(selectedType);
+                }
+            }
+        }
+
+        private void UploadTextureForType(string type)
+        {
+            var openFileDialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Filter = "Image Files|*.png;*.jpg;*.jpeg;*.bmp",
+                Title = $"Select {type} Texture"
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                var brush = LoadTilingBrushFromFile(openFileDialog.FileName);
+
+                switch (type.ToLower())
+                {
+                    case "grass":
+                        _grassBrush = brush;
+                        break;
+                    case "sand":
+                        _sandBrush = brush;
+                        break;
+                    case "rock":
+                        _rockBrush = brush;
+                        break;
+                }
+
+                //RetextureScene();
+                GoodRetexture();
+            }
+        }
+
+
+        private void ResetTexture_Click(object sender, RoutedEventArgs e)
+        {
+            _grassBrush = LoadTilingBrush(DefaultGrass);
+            _rockBrush = LoadTilingBrush(DefaultRock);
+            _sandBrush = LoadTilingBrush(DefaultSand);
+
+            //RetextureScene();
+            GoodRetexture();
+        }
+
+       
+
+        #endregion
+
+        #region texture upload helpers
+
+        private ImageBrush LoadTilingBrushFromFile(string path, double tileScale = 0.1)
+        {
+            var image = new BitmapImage(new Uri(path, UriKind.Absolute));
+
+            return new ImageBrush(image)
+            {
+                TileMode = TileMode.Tile,
+                Viewport = new Rect(0, 0, tileScale, tileScale),
+                ViewportUnits = BrushMappingMode.RelativeToBoundingBox,
+                Stretch = Stretch.Fill
+            };
+        }
+
+        #endregion
+
+        #region texturing images
+
+        private void GoodRetexture()
+        {
+            //_grassBrush = LoadTilingBrush(DefaultGrass);
+            //_rockBrush = LoadTilingBrush(DefaultRock);
+            //_sandBrush = LoadTilingBrush(DefaultSand);
+
+            _viewport3D = FindViewport3D(this);
+            _modelGroup = FindSceneModelGroup(_viewport3D);
+
+            _modelGroup.Children.Clear();
+
 
             foreach (var kvp in _meshes)
             {
@@ -72,26 +206,42 @@ namespace Prototyping.Pages
                 _modelGroup.Children.Add(model);
             }
 
+
+
             SetCameraToMesh();
         }
 
-        #region custom texturing
-
-        private void UploadTexture_Click(object sender, RoutedEventArgs e)
-        {
-
-        }
-
-        private void ResetTexture_Click(object sender, RoutedEventArgs e)
-        {
-
-        }
-
-        #endregion
-
-        #region texturing images
 
         private ImageBrush LoadTilingBrush(string relativePath, double tileScale = 0.1)
+        {
+            Debug.WriteLine("Entered Tiling brush");
+            try
+            {
+                var uri = new Uri($"pack://application:,,,/Prototyping;component/Resources/Textures/{relativePath}", UriKind.Absolute);
+                var image = new BitmapImage(uri)
+                {
+                    CacheOption = BitmapCacheOption.OnLoad
+                };
+
+                Debug.WriteLine($"Loaded texture: {relativePath} ({image.PixelWidth}x{image.PixelHeight})");
+
+                return new ImageBrush(image)
+                {
+                    TileMode = TileMode.Tile,
+                    Viewport = new Rect(0, 0, tileScale, tileScale),
+                    ViewportUnits = BrushMappingMode.RelativeToBoundingBox,
+                    Stretch = Stretch.Fill
+                };
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to load texture '{relativePath}': {ex.Message}");
+                return null; // don't wrap a brush in an ImageBrush
+            }
+        }
+
+
+        private ImageBrush LoadTilingBrushStart(string relativePath, double tileScale = 0.1)
         {
             var uri = new Uri($"pack://application:,,,/Prototyping;component/Resources/Textures/{relativePath}", UriKind.Absolute);
             var image = new BitmapImage(uri);
@@ -112,19 +262,19 @@ namespace Prototyping.Pages
             switch (label)
             {
                 case "beach":
-                    return LoadTilingBrush("SandAlbedo.png");
+                    return _sandBrush;
                 case "cliff":
-                    return LoadTilingBrush("RockAlbedo.png");
+                    return _rockBrush;
                 case "Top":
-                    return LoadTilingBrush("GrassAlbedo.png");
+                    return _grassBrush;
                 case "Base":
-                    return LoadTilingBrush("GrassAlbedo.png");
+                    return _grassBrush;
                 case "Mid":
-                    return LoadTilingBrush("GrassAlbedo.png");
+                    return _grassBrush;
                 case "ramp":
-                    return LoadTilingBrush("GrassAlbedo.png");
+                    return _grassBrush;
                 default:
-                    return LoadTilingBrush("RockAlbedo.png"); // fallback
+                    return _rockBrush; // fallback
             }
         }
 
@@ -190,20 +340,7 @@ namespace Prototyping.Pages
 
             _viewport3D.Camera = camera;
         }
-
-        private Color GetColorForLabel(string label)
-        {
-            if (label == "Mid") return Colors.Green;
-            if (label == "Base") return Colors.Green;
-            if (label == "ramp") return Colors.Green;
-            if (label == "Top") return Colors.Green;
-            if (label == "none") return Colors.Blue;
-            if (label == "beach") return Colors.Goldenrod;
-            if (label == "cliff") return Colors.Gray;
-            if (label == "WEIRDLOL") return Colors.Magenta;
-
-            return Colors.Gray;
-        }
+       
 
         private T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
         {
