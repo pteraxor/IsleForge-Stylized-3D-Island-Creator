@@ -52,23 +52,7 @@ namespace Prototyping.Pages
             _viewport3D = FindViewport3D(this);
             _modelGroup = FindSceneModelGroup(_viewport3D);
 
-            /*
-            foreach (var kvp in _meshes)
-            {
-                string label = kvp.Key;
-                var mesh = kvp.Value;
-
-                var color = GetColorForLabel(label);
-                var material = new DiffuseMaterial(new SolidColorBrush(color));
-
-                var model = new GeometryModel3D(mesh, material)
-                {
-                    BackMaterial = material
-                };
-
-                _modelGroup.Children.Add(model);
-            }
-            */
+            
             _modelGroup.Children.Clear();
 
             foreach (var kvp in _meshes)
@@ -88,13 +72,22 @@ namespace Prototyping.Pages
                 _modelGroup.Children.Add(model);
             }
 
-
-            var modelVisual = new ModelVisual3D { Content = _modelGroup };
-            //_viewport3D.Children.Clear();
-            _viewport3D.Children.Add(modelVisual);
-
-            SetCameraToMesh(GetMeshCenter(_meshes));
+            SetCameraToMesh();
         }
+
+        #region custom texturing
+
+        private void UploadTexture_Click(object sender, RoutedEventArgs e)
+        {
+
+        }
+
+        private void ResetTexture_Click(object sender, RoutedEventArgs e)
+        {
+
+        }
+
+        #endregion
 
         #region texturing images
 
@@ -151,7 +144,7 @@ namespace Prototyping.Pages
 
         #endregion
 
-        #region absurd helpers
+        #region uneasy helpers
 
         private Viewport3D FindViewport3D(DependencyObject parent)
         {
@@ -184,33 +177,14 @@ namespace Prototyping.Pages
 
         #region carry over
 
-        private Point3D GetMeshCenter(Dictionary<string, MeshGeometry3D> meshes)
-        {
-            double sumX = 0, sumY = 0, sumZ = 0;
-            int count = 0;
 
-            foreach (var mesh in meshes.Values)
-            {
-                foreach (var pos in mesh.Positions)
-                {
-                    sumX += pos.X;
-                    sumY += pos.Y;
-                    sumZ += pos.Z;
-                    count++;
-                }
-            }
-
-            if (count == 0) return new Point3D(0, 0, 0);
-            return new Point3D(sumX / count, sumY / count, sumZ / count);
-        }
-
-        private void SetCameraToMesh(Point3D center)
+        private void SetCameraToMesh()
         {
             var camera = new PerspectiveCamera
             {
-                Position = center + new Vector3D(0, 300, 50),
-                LookDirection = center - (center + new Vector3D(0, 300, 50)),
-                UpDirection = new Vector3D(0, 1, 0),
+                Position = MeshDataStore.CameraPosition,
+                LookDirection = MeshDataStore.CameraLookDirection,
+                UpDirection = MeshDataStore.CameraUpDirection,
                 FieldOfView = 60
             };
 
