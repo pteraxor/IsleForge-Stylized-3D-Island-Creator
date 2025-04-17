@@ -12,7 +12,6 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
-using System.Windows.Media.Imaging;
 using Prototyping.Tools;
 using System.Diagnostics;
 using Prototyping.Helpers;
@@ -1053,7 +1052,31 @@ namespace Prototyping.Pages
             return max;
         }
 
+        private void Back_Click(object sender, RoutedEventArgs e)
+        {
+            //might add the option to go back
+        }
+        private void Next_Click(object sender, RoutedEventArgs e)
+        {
+            var finalMeshes = new Dictionary<string, MeshGeometry3D>();
 
+            foreach (var child in _modelGroup.Children)
+            {
+                if (child is GeometryModel3D geom && geom.Geometry is MeshGeometry3D mesh)
+                {
+                    string label = GetLabelFromGeometryModel(geom);
+                    finalMeshes[label] = mesh;
+                }
+            }
+
+            MeshDataStore.Meshes = finalMeshes;
+            MeshDataStore.OriginalMeshPositions = originalMeshPositions;
+
+            //MeshDataStore.Meshes = CreateMeshesByLabel(labeledHeightMap);
+            //MeshDataStore.OriginalMeshPositions = originalMeshPositions;
+            //for when it's time to to the next step. need to consider how to check for when it's okay to do so
+            NavigationService.Navigate(new TexturingPage());
+        }
 
 
     }
