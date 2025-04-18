@@ -30,23 +30,37 @@ namespace Prototyping.Pages
     public partial class TextureAndBumpPage : Page
     {
         private GroupModel3D _sceneGroup = new GroupModel3D();
-        private DefaultEffectsManager _effectsManager = new DefaultEffectsManager();      
+        private DefaultEffectsManager _effectsManager = new DefaultEffectsManager();
+
+        private readonly Dictionary<string, TextureModel> _diffuseTextures = new Dictionary<string, TextureModel>();
+
 
 
         public TextureAndBumpPage()
         {
-            InitializeComponent();           
+            InitializeComponent();
             this.Loaded += TextureAndBumpPage_Loaded;
             Debug.WriteLine("made it");
         }
 
         private void TextureAndBumpPage_Loaded(object sender, RoutedEventArgs e)
         {
+            //load textures
+            _diffuseTextures["Top"] = LoadTexture("GrassAlbedo.png");
+            _diffuseTextures["Base"] = LoadTexture("GrassAlbedo.png");
+            _diffuseTextures["Mid"] = LoadTexture("GrassAlbedo.png");
+            _diffuseTextures["ramp"] = LoadTexture("GrassAlbedo.png");
+            _diffuseTextures["beach"] = LoadTexture("SandAlbedo.png");
+            _diffuseTextures["cliff"] = LoadTexture("RockAlbedo.png");
+
+
+
             var viewport = FindViewport();
             viewport.EffectsManager = _effectsManager;
-            
+
 
             viewport.Items.Add(_sceneGroup);
+            //HelixToolkit.Wpf.SharpDX.MeshGeometry3D helixMesh;
 
             /*
             foreach (var kvp in MeshDataStore.Meshes)
@@ -65,11 +79,18 @@ namespace Prototyping.Pages
 
                 var helixMesh = ConvertToHelixMesh(wpfMesh);
 
-                var mat = new PhongMaterial
+                var mat2 = new PhongMaterial
                 {
                     DiffuseColor = Color.White,
                     SpecularColor = Color.Gray,
                     SpecularShininess = 20f
+                };
+                var mat = new PhongMaterial
+                {
+                    DiffuseColor = Color.White,
+                    DiffuseMap = LoadTexture("GrassAlbedo.png"),
+                    SpecularColor = Color.Gray,
+                    SpecularShininess = 0.1f
                 };
 
                 var model = new MeshGeometryModel3D
@@ -80,62 +101,88 @@ namespace Prototyping.Pages
                 };
 
                 _sceneGroup.Children.Add(model);
+
+                SetCamera(helixMesh);
             }
-            Debug.WriteLine($"Mesh count: {MeshDataStore.Meshes.Count}");
             */
-            /*
-            var cubeBuilder = new MeshBuilder();
-            cubeBuilder.AddBox(new Vector3(0, 0, 0), 20, 20, 20);
-            var cube = new MeshGeometryModel3D
+            PopulateMeshData();
+        }
+
+        private void PopulateMeshData()
+        {
+            foreach (var kvp in MeshDataStore.Meshes)
             {
-                Geometry = cubeBuilder.ToMeshGeometry3D(),
-                Material = PhongMaterials.Red
-            };
-            _sceneGroup.Children.Add(cube);
-            */
-            // Grab a single known mesh
-            var wpfMesh = MeshDataStore.Meshes["Top"]; // or "Base", etc.
-            var helixMesh = ConvertToHelixMesh(wpfMesh);
+                string label = kvp.Key;
+                var wpfMesh = kvp.Value;
 
-            var mat = new PhongMaterial
-            {
-                DiffuseColor = Color.Green,
-                SpecularColor = Color.White,
-                AmbientColor = Color.Gray,
-                EmissiveColor = new Color(0.2f, 0.2f, 0.2f),
-                SpecularShininess = 100f
-            };
+                if (wpfMesh.Positions.Count == 0 || wpfMesh.TriangleIndices.Count == 0)
+                {
+                    Debug.WriteLine($"Skipping empty mesh: {label}");
+                    continue;
+                }
 
-            var model = new MeshGeometryModel3D
-            {
-                Geometry = helixMesh,
-                Material = mat,
-                CullMode = SharpDX.Direct3D11.CullMode.None
-            };
-            Debug.WriteLine($"Positions: {helixMesh.Positions.Count}");
-            Debug.WriteLine($"Indices: {helixMesh.Indices.Count}");
-            Debug.WriteLine($"Normals: {(helixMesh.Normals != null ? helixMesh.Normals.Count : 0)}");
+                var helixMesh = ConvertToHelixMesh(wpfMesh);
+                var texture = GetTextureForLabel(label);
 
-            _sceneGroup.Children.Add(model);
+                var mat = new PhongMaterial
+                {
+                    //DiffuseColor = Color.White,
+                    DiffuseMap = texture,
+                    //SpecularColor = Color.Gray,
+                    SpecularShininess = 1f
+                };
 
-            var cubeBuilder = new MeshBuilder();
-            cubeBuilder.AddBox(new Vector3(0, 0, 0), 20, 20, 20);
-            var cube = new MeshGeometryModel3D
-            {
-                Geometry = cubeBuilder.ToMeshGeometry3D(),
-                Material = PhongMaterials.Red
-            };
-            _sceneGroup.Children.Add(cube);
+                var model = new MeshGeometryModel3D
+                {
+                    Geometry = helixMesh,
+                    Material = mat,
+                    CullMode = SharpDX.Direct3D11.CullMode.None
+                };
 
-            //viewport.InvalidateRender();
-            //viewport.ShowBoundingBox = true;
-            SetCamera(helixMesh);
+                _sceneGroup.Children.Add(model);
+
+                // Optionally set camera once
+                if (label == "Top")
+                    SetCamera(helixMesh);
+            }
+
         }
 
         private Viewport3DX FindViewport()
         {
             return HelperExtensions.FindElementByTag<Viewport3DX>(this, "HelixViewport");
         }
+
+        #region texturing
+
+        private TextureModel GetTextureForLabel(string label)
+        {
+            if (_diffuseTextures.TryGetValue(label, out var texture))
+                return texture;
+
+            // fallback if not matched
+            return _diffuseTextures["cliff"];
+        }
+
+
+        private TextureModel LoadTexture(string relativePath)
+        {
+            var uri = new Uri($"pack://application:,,,/Prototyping;component/Resources/Textures/{relativePath}", UriKind.Absolute);
+            var bitmap = new BitmapImage(uri);
+
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            var stream = new MemoryStream();
+            encoder.Save(stream);
+            stream.Position = 0;
+
+            return new TextureModel(stream);
+        }
+
+
+        #endregion
+
+        #region camera
 
         private void SetCamera(HelixToolkit.Wpf.SharpDX.MeshGeometry3D helixMesh)
         {
@@ -160,28 +207,9 @@ namespace Prototyping.Pages
             viewport.Camera = camera;
         }
 
-        private void SetCamera2()
-        {
-            Debug.WriteLine("called set camera");
+        #endregion
 
-
-            var camera = new HelixToolkit.Wpf.SharpDX.PerspectiveCamera
-            {
-                /*
-                 Position = new SharpDX.Vector3(200, 200, 200),
-        LookDirection = new SharpDX.Vector3(-200, -200, -200),
-        UpDirection = new SharpDX.Vector3(0, 1, 0), 
-                */
-                Position = new System.Windows.Media.Media3D.Point3D(200, 200, 200),
-                LookDirection = new System.Windows.Media.Media3D.Vector3D(-200, -200, -200),
-                UpDirection = new System.Windows.Media.Media3D.Vector3D(0, 1, 0),
-                FieldOfView = 60f,
-                FarPlaneDistance = 1000,
-                NearPlaneDistance = 0.1
-            };
-            var viewport = FindViewport();
-            viewport.Camera = camera;
-        }
+        #region helix conversion
 
         private HelixToolkit.Wpf.SharpDX.MeshGeometry3D ConvertToHelixMesh(System.Windows.Media.Media3D.MeshGeometry3D wpfMesh)
         {
@@ -191,7 +219,13 @@ namespace Prototyping.Pages
             var mesh = new HelixToolkit.Wpf.SharpDX.MeshGeometry3D
             {
                 Positions = new Vector3Collection(positions),
-                Indices = new IntCollection(indices)
+                Indices = new IntCollection(indices),
+                Normals = new Vector3Collection(MeshGeometryHelper.CalculateNormals(new MeshGeometry3D
+                {
+                    Positions = new Vector3Collection(positions),
+                    Indices = new IntCollection(indices)
+                })),
+                TextureCoordinates = GenerateUVs(positions)
             };
 
             //Calculate normals
@@ -200,43 +234,7 @@ namespace Prototyping.Pages
 
             return mesh;
         }
-
-
-        private HelixToolkit.Wpf.SharpDX.MeshGeometry3D ConvertToHelixMesh123(System.Windows.Media.Media3D.MeshGeometry3D wpfMesh)
-        {
-            var positions = wpfMesh.Positions.Select(p => new Vector3((float)p.X, (float)p.Y, (float)p.Z)).ToList();
-            var indices = wpfMesh.TriangleIndices.Select(i => (int)i).ToList();
-
-            var mesh = new HelixToolkit.Wpf.SharpDX.MeshGeometry3D
-            {
-                Positions = new Vector3Collection(positions),
-                Indices = new IntCollection(indices),
-                Normals = null // Let the material handle this for now
-            };
-
-            return mesh;
-        }
-
-
-        private HelixToolkit.Wpf.SharpDX.MeshGeometry3D ConvertToHelixMesh2(System.Windows.Media.Media3D.MeshGeometry3D wpfMesh)
-        {
-            var builder = new MeshBuilder(true, true);
-
-            for (int i = 0; i < wpfMesh.TriangleIndices.Count; i += 3)
-            {
-                var p0 = wpfMesh.Positions[wpfMesh.TriangleIndices[i]];
-                var p1 = wpfMesh.Positions[wpfMesh.TriangleIndices[i + 1]];
-                var p2 = wpfMesh.Positions[wpfMesh.TriangleIndices[i + 2]];
-
-                builder.AddTriangle(
-                    p0.ToVector3(),
-                    p1.ToVector3(),
-                    p2.ToVector3());
-            }
-
-            return builder.ToMeshGeometry3D();
-        }
-
+          
         private Vector3 ToVector3(System.Windows.Media.Media3D.Point3D point)
         {
             return new Vector3((float)point.X, (float)point.Y, (float)point.Z);
@@ -247,6 +245,22 @@ namespace Prototyping.Pages
         {
             return new Vector3((float)vector.X, (float)vector.Y, (float)vector.Z);
         }
+
+        //new UV projection for helix conversion
+        private Vector2Collection GenerateUVs(List<Vector3> positions, float scale = 0.1f)
+        {
+            var uvs = new Vector2Collection();
+            foreach (var pos in positions)
+            {
+                // Simple top-down projection
+                float u = pos.X * scale;
+                float v = pos.Z * scale;
+                uvs.Add(new Vector2(u, v));
+            }
+            return uvs;
+        }
+
+        #endregion
     }
 
 }
