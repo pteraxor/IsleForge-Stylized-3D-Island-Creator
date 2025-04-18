@@ -4,11 +4,25 @@
       xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
       xmlns:local="clr-namespace:IsleForge.Pages"
+      xmlns:helix="clr-namespace:HelixToolkit.Wpf.SharpDX;assembly=HelixToolkit.Wpf.SharpDX"
       mc:Ignorable="d" 
       d:DesignHeight="450" d:DesignWidth="800"
       Title="TextureAndBumpPage">
 
     <Grid>
-        <ContentControl x:Name="RenderHostContainer"/>
+        <helix:Viewport3DX x:Name="Viewport"
+                       ShowCoordinateSystem="True"
+                       ShowFrameRate="True"
+                       ZoomExtentsWhenLoaded="True"
+                       CameraRotationMode="Trackball"
+                       Background="Black">
+            <helix:Viewport3DX.Camera>
+                <helix:PerspectiveCamera Position="3,3,3"
+                                     LookDirection="-3,-3,-3"
+                                     UpDirection="0,1,0" />
+            </helix:Viewport3DX.Camera>
+
+            <helix:DirectionalLight3D Direction="-1,-1,-1" Color="White" />
+        </helix:Viewport3DX>
     </Grid>
 </Page>
