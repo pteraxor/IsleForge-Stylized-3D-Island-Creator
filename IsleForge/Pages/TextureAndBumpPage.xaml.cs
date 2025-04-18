@@ -27,26 +27,48 @@ namespace IsleForge.Pages
 
             Viewport.EffectsManager = new DefaultEffectsManager();
             // 1. Build the cube geometry
-            var builder = new MeshBuilder();
+            var builder = new MeshBuilder(true, true); // enable normals and UVs
             builder.AddBox(new Vector3(0, 0, 0), 1f, 1f, 1f);
             var mesh = builder.ToMeshGeometry3D();
+            
 
             // 2. Load normal map from resources
             TextureModel normalMap = null;
-            var normalMapPath = "Resources/Textures/TestNormal.png";
-            if (File.Exists(normalMapPath))
+            var uri = new Uri("pack://application:,,,/Resources/Textures/GrassNormal.png", UriKind.Absolute);
+
+            var resourceInfo = Application.GetResourceStream(uri);
+            if (resourceInfo != null)
             {
-                using var stream = File.OpenRead(normalMapPath);
-                normalMap = new TextureModel(stream);
+                normalMap = new TextureModel(resourceInfo.Stream);
             }
+            else
+            {
+                MessageBox.Show("Could not find embedded resource: GrassNormal.png");
+            }
+
+            TextureModel diffuseMap = null;
+            uri = new Uri("pack://application:,,,/Resources/Textures/Checker.png", UriKind.Absolute);
+
+            resourceInfo = Application.GetResourceStream(uri);
+            if (resourceInfo != null)
+            {
+                diffuseMap = new TextureModel(resourceInfo.Stream);
+            }
+            else
+            {
+                MessageBox.Show("Could not find embedded resource: Checker.png");
+            }
+
 
             // 3. Define material
             var material = new PhongMaterial
             {
                 DiffuseColor = MediaColor.FromRgb(128, 128, 128).ToColor4(),
                 AmbientColor = MediaColor.FromRgb(64, 64, 64).ToColor4(),
-                SpecularColor = Color.White,
+                //SpecularColor = Color.White,
+                SpecularColor = MediaColor.FromRgb(64, 64, 64).ToColor4(),
                 SpecularShininess = 100f,
+                DiffuseMap = diffuseMap,
                 NormalMap = normalMap
             };
 
