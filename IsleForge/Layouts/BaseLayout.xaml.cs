@@ -24,5 +24,42 @@ namespace IsleForge.Layouts
         {
             InitializeComponent();
         }
+
+        public static readonly DependencyProperty HeaderContentProperty =
+            DependencyProperty.Register("HeaderContent", typeof(object), typeof(BaseLayout), new PropertyMetadata(null));
+
+        public object HeaderContent
+        {
+            get => GetValue(HeaderContentProperty);
+            set => SetValue(HeaderContentProperty, value);
+        }
+
+        public static readonly DependencyProperty LeftContentProperty =
+            DependencyProperty.Register("LeftContent", typeof(object), typeof(BaseLayout), new PropertyMetadata(null));
+
+        public object LeftContent
+        {
+            get => GetValue(LeftContentProperty);
+            set => SetValue(LeftContentProperty, value);
+        }
+
+        public static readonly DependencyProperty FooterContentProperty =
+            DependencyProperty.Register("FooterContent", typeof(object), typeof(BaseLayout), new PropertyMetadata(null));
+
+        public object FooterContent
+        {
+            get => GetValue(FooterContentProperty);
+            set => SetValue(FooterContentProperty, value);
+        }
+
+        public static readonly DependencyProperty RightContentProperty =
+            DependencyProperty.Register("RightContent", typeof(object), typeof(BaseLayout), new PropertyMetadata(null));
+
+        public object RightContent
+        {
+            get => GetValue(RightContentProperty);
+            set => SetValue(RightContentProperty, value);
+        }
     }
+
 }

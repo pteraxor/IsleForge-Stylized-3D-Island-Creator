@@ -8,4 +8,51 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Remove="Fonts\Gidole\Gidole-Regular.ttf" />
+    <None Remove="Fonts\Gidole\OFL.txt" />
+    <None Remove="Resources\BaseLayer.txt" />
+    <None Remove="Resources\EdgeLayer.txt" />
+    <None Remove="Resources\Footprint.txt" />
+    <None Remove="Resources\logo.ico" />
+    <None Remove="Resources\Logo400.png" />
+    <None Remove="Resources\MidLayer.txt" />
+    <None Remove="Resources\solvedMap.txt" />
+    <None Remove="Resources\solvedMapWithLabels.txt" />
+    <None Remove="Resources\Textures\GrassAlbedo.png" />
+    <None Remove="Resources\Textures\GrassNormal.png" />
+    <None Remove="Resources\Textures\RockAlbedo.png" />
+    <None Remove="Resources\Textures\RockNormal.png" />
+    <None Remove="Resources\Textures\SandAlbedo.png" />
+    <None Remove="Resources\Textures\SandNormal.png" />
+    <None Remove="Resources\Textures\TestNormal.png" />
+    <None Remove="Resources\TopLayer.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Fonts\Gidole\Gidole-Regular.ttf" />
+    <Resource Include="Fonts\Gidole\OFL.txt" />
+    <Resource Include="Resources\BaseLayer.txt" />
+    <Resource Include="Resources\EdgeLayer.txt" />
+    <Resource Include="Resources\Footprint.txt" />
+    <Resource Include="Resources\logo.ico" />
+    <Resource Include="Resources\Logo400.png" />
+    <Resource Include="Resources\MidLayer.txt" />
+    <Resource Include="Resources\solvedMap.txt" />
+    <Resource Include="Resources\solvedMapWithLabels.txt" />
+    <Resource Include="Resources\Textures\GrassAlbedo.png" />
+    <Resource Include="Resources\Textures\GrassNormal.png" />
+    <Resource Include="Resources\Textures\RockAlbedo.png" />
+    <Resource Include="Resources\Textures\RockNormal.png" />
+    <Resource Include="Resources\Textures\SandAlbedo.png" />
+    <Resource Include="Resources\Textures\SandNormal.png" />
+    <Resource Include="Resources\Textures\TestNormal.png" />
+    <Resource Include="Resources\TopLayer.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="HelixToolkit.SharpDX.Core.Wpf" Version="2.27.0" />
+    <PackageReference Include="WriteableBitmapEx" Version="1.6.8" />
+  </ItemGroup>
+
 </Project>

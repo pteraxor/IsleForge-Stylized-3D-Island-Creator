@@ -4,6 +4,12 @@
              xmlns:local="clr-namespace:IsleForge"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-         
+        <Style TargetType="{x:Type TextBlock}">
+            <Setter Property="FontFamily" Value="pack://application:,,,/Fonts/Gidole/#Gidole"/>
+        </Style>
+
+        <Style TargetType="{x:Type Control}">
+            <Setter Property="FontFamily" Value="pack://application:,,,/Fonts/Gidole/#Gidole"/>
+        </Style>
     </Application.Resources>
 </Application>
