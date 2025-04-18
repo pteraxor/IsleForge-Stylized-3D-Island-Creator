@@ -19,23 +19,25 @@
         <local:BaseLayout.LeftContent>
             <StackPanel>
 
-                <!--<Button Content="Create mesh" Margin="0,15,0,0" Click="CreateMesh_Click"/>-->
-                <!--<Button Content="Reset Noise" Margin="0,5,0,0" Click="ResetNoise_Click"/>-->
+                <Button Content="Create mesh" Margin="0,15,0,0" Click="CreateMesh_Click"/>
+                <Button Content="Reset Noise" Margin="0,5,0,0" Click="ResetNoise_Click" Tag="ResetNoiseButton" IsEnabled="False"/>
 
-                <!--<Button Content="Add Noise" Margin="0,5,0,0" Click="ApplyNoise_Click"/>-->
+                
 
                 <!-- Noise Parameter Inputs -->
                 <TextBlock Text="Strength:" Margin="0,10,0,0"/>
-                <TextBox Tag="NoiseStrength" Text="0.5" Margin="0,2,0,0"/>
+                <TextBox Tag="NoiseStrength" Text=".5" Margin="0,2,0,0"/>
 
                 <TextBlock Text="Scale:" Margin="0,5,0,0"/>
-                <TextBox Tag="NoiseScale" Text="0.1" Margin="0,2,0,0"/>
+                <TextBox Tag="NoiseScale" Text="0.07" Margin="0,2,0,0"/>
 
                 <TextBlock Text="Octaves:" Margin="0,5,0,0"/>
                 <TextBox Tag="NoiseOctaves" Text="4" Margin="0,2,0,0"/>
 
                 <TextBlock Text="Lacunarity:" Margin="0,5,0,0"/>
                 <TextBox Tag="NoiseLacunarity" Text="2.0" Margin="0,2,0,0"/>
+
+                <Button Content="Apply Noise" Margin="0,10,0,0" Click="ApplyNoise_Click" Tag="ApplyNoiseButton" IsEnabled="False"/>
 
                 <!--<Button Content="Export mesh" Margin="0,15,0,0" Click="ExportMesh_Click"/>-->
                 
@@ -54,9 +56,9 @@
                         <ColumnDefinition Width=".25*"/>
                     </Grid.ColumnDefinitions>
 
-                    <!--<Button Content="Back" Margin="5" Grid.Column="1" Click="Back_Click"/>-->
+                    <Button Content="Back" Margin="5" Grid.Column="1" Click="Back_Click"/>
 
-                    <!--<Button Content="Next" Margin="5" Grid.Column="2" Click="Next_Click"/>-->
+                    <Button Content="Next" Margin="5" Grid.Column="2" Click="Next_Click" Tag="NextButton" IsEnabled="False"/>
                 </Grid>
             </DockPanel>
         </local:BaseLayout.FooterContent>
