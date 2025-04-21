@@ -56,7 +56,8 @@ namespace IsleForge.Pages
             _viewport3D = FindVisualChild<Viewport3D>(this);
             _modelGroup = FindSceneModelGroup(_viewport3D);
 
-            TESTINGLOAD();
+            //TESTINGLOAD();
+            NORMALLOAD();
 
         }
 
@@ -84,6 +85,18 @@ namespace IsleForge.Pages
             ApplyNoiseToMeshes(strength, scale, octaves, 0.5f, lacunarity);
 
             return;
+        }
+
+        #endregion
+
+        #region loading
+
+        private void NORMALLOAD()
+        {
+            heightMap = MapDataStore.FinalHeightMap;
+            labeledHeightMap = MapDataStore.AnnotatedHeightMap;
+            MAXVALUE = GetMaxValue(heightMap);
+            Debug.WriteLine("Test data loaded.");
         }
 
         #endregion
