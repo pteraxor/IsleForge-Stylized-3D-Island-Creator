@@ -56,8 +56,7 @@ namespace IsleForge.Pages
             _viewport3D = FindVisualChild<Viewport3D>(this);
             _modelGroup = FindSceneModelGroup(_viewport3D);
 
-            //TESTINGLOAD();
-            NORMALLOAD();
+            LoadDataFromHeightMap();
 
         }
 
@@ -91,12 +90,33 @@ namespace IsleForge.Pages
 
         #region loading
 
-        private void NORMALLOAD()
+        private void LoadDataFromHeightMap()
         {
             heightMap = MapDataStore.FinalHeightMap;
             labeledHeightMap = MapDataStore.AnnotatedHeightMap;
             MAXVALUE = GetMaxValue(heightMap);
             Debug.WriteLine("Test data loaded.");
+        }
+
+        private float GetMaxValue(float[,] data)
+        {
+            int width = data.GetLength(0);
+            int height = data.GetLength(1);
+
+            float max = float.MinValue;
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (data[x, y] > max)
+                    {
+                        max = data[x, y];
+                    }
+                }
+            }
+
+            return max;
         }
 
         #endregion
@@ -457,94 +477,7 @@ namespace IsleForge.Pages
 
         #endregion
 
-        #region testing load
-
-        private void TESTINGLOAD()
-        {
-            string heightMapPath = @"../../../Resources/solvedMap.txt";
-            string labelMapPath = @"../../../Resources/solvedMapWithLabels.txt";
-
-            heightMap = LoadFloatArrayFromFile(System.IO.Path.GetFullPath(heightMapPath));
-            labeledHeightMap = LoadLabeledMapFromText(System.IO.Path.GetFullPath(labelMapPath));
-
-            MAXVALUE = GetMaxValue(heightMap);
-
-            //Debug.WriteLine("baseLayer count: " + CountOnes(baseLayer));
-
-            Debug.WriteLine("Test data loaded.");
-
-        }
-
-        private float[,] LoadFloatArrayFromFile(string filePath)
-        {
-            var lines = System.IO.File.ReadAllLines(filePath);
-            int height = lines.Length;
-            int width = lines[0].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Length;
-
-            float[,] result = new float[width, height];
-
-            for (int y = 0; y < height; y++)
-            {
-                var tokens = lines[y].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                for (int x = 0; x < width; x++)
-                {
-                    if (float.TryParse(tokens[x], out float val))
-                        result[x, y] = val;
-                    else
-                        result[x, y] = 0f;
-                }
-            }
-
-            return result;
-        }
-
-        public static LabeledValue[,] LoadLabeledMapFromText(string path)
-        {
-            var lines = System.IO.File.ReadAllLines(path);
-            int height = lines.Length;
-            int width = lines[0].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Length;
-
-            var result = new LabeledValue[width, height];
-
-            for (int y = 0; y < height; y++)
-            {
-                var tokens = lines[y].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                for (int x = 0; x < width; x++)
-                {
-                    var parts = tokens[x].Split('|');
-                    float value = float.Parse(parts[0]);
-                    string label = parts.Length > 1 ? parts[1] : "";
-                    result[x, y] = new LabeledValue(value, label);
-                }
-            }
-
-            return result;
-        }
-
-
-        #endregion
-
-        private float GetMaxValue(float[,] data)
-        {
-            int width = data.GetLength(0);
-            int height = data.GetLength(1);
-
-            float max = float.MinValue;
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    if (data[x, y] > max)
-                    {
-                        max = data[x, y];
-                    }
-                }
-            }
-
-            return max;
-        }
-
+        
         #region viewing helpers
 
         private T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject

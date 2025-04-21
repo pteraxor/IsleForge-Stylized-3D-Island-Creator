@@ -29,6 +29,22 @@ namespace IsleForge.Helpers
             return null;
         }
 
+        public T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            int count = VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T typedChild)
+                    return typedChild;
+
+                T result = FindVisualChild<T>(child);
+                if (result != null)
+                    return result;
+            }
+            return null;
+        }
+
         public static float GetFloatFromTag(DependencyObject parent, string tag, float fallback)
         {
             var input = FindElementByTag<TextBox>(parent, tag);
