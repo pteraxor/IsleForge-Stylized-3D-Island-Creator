@@ -28,12 +28,13 @@ namespace IsleForge.Pages
         private WriteableBitmap _heightMapLayer;
         private Image _heightMapLayerImage;
 
-        private float TOPHEIGHT = 40;
-        private float MIDHEIGHT = 30;
-        private float BASEHEIGHT = 20;
+        private float TOPHEIGHT = 32;
+        private float MIDHEIGHT = 22;
+        private float BASEHEIGHT = 12;
 
         private const int SMALLER_RADIUS = 20;
         private const int LARGER_RADIUS = 30;
+        private const float SMOOTHING_FACTOR = 0.8f;
 
         private float[,] baseLayer = MapDataStore.BaseLayer;
         private float[,] midLayer = MapDataStore.MidLayer;
@@ -72,6 +73,10 @@ namespace IsleForge.Pages
 
             footprintMask = GetInverseMask(footprint);
             bottomAllOnes = GetBottom(footprint);
+
+            MapDataStore.MaxHeightShare = TOPHEIGHT;
+            MapDataStore.MidHeightShare = MIDHEIGHT;
+            MapDataStore.LowHeightShare = BASEHEIGHT;
 
             CreateTheHeightMap();
         }
@@ -117,7 +122,7 @@ namespace IsleForge.Pages
 
             var TopBaseBlendResult = BlendMaskOverwrite(baseLayer, topLayer, expandedTopBaseEdges, BASEHEIGHT, TOPHEIGHT);
             //ExportLayerToText("blendResult.txt", TopBaseBlendResult);
-            var TopBaseSmoothed = SmoothVertices2D(TopBaseBlendResult, factor: 0.7f, iterations: 70);
+            var TopBaseSmoothed = SmoothVertices2D(TopBaseBlendResult, factor: SMOOTHING_FACTOR, iterations: 70);
             //CreateALayerHeightmap(TopBaseSmoothed);
             #endregion
 
@@ -129,7 +134,7 @@ namespace IsleForge.Pages
             // create mask area both heights
             var TopMidBlendResult = BlendMaskOverwrite(midLayer, topLayer, expandedTopMidEdges, MIDHEIGHT, TOPHEIGHT);
             //smooth heights together
-            var TopMidSmoothed = SmoothVertices2D(TopMidBlendResult, factor: 0.7f, iterations: 70);
+            var TopMidSmoothed = SmoothVertices2D(TopMidBlendResult, factor: SMOOTHING_FACTOR, iterations: 70);
 
             //CreateALayerHeightmap(TopMidSmoothed);
             //CreateALayer(topMidEdges, Colors.Gold);
@@ -147,7 +152,7 @@ namespace IsleForge.Pages
             // create mask area both heights
             var midBaseBlendResult = BlendMaskOverwrite(baseLayer, midLayer, expandedmidBaseEdges, BASEHEIGHT, MIDHEIGHT);
             //smooth heights together
-            var midBaseSmoothed = SmoothVertices2D(midBaseBlendResult, factor: 0.7f, iterations: 70);
+            var midBaseSmoothed = SmoothVertices2D(midBaseBlendResult, factor: SMOOTHING_FACTOR, iterations: 70);
 
             //CreateALayerHeightmap(midBaseSmoothed);
             //CreateALayer(expandedmidBaseEdges, Colors.Gold);
@@ -160,11 +165,11 @@ namespace IsleForge.Pages
             // match edges to user drawn edges
             var matchedBottomBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, bottomBaseEdgesWork);
             // expand edge redius
-            var expandedBottomBaseEdges = ExpandEdgeInfluenceClean(matchedBottomBaseEdges, (int)(SMALLER_RADIUS * 2f), (int)(LARGER_RADIUS * 2f));
+            var expandedBottomBaseEdges = ExpandEdgeInfluenceClean(matchedBottomBaseEdges, (int)(SMALLER_RADIUS * 1.3f), (int)(LARGER_RADIUS *  1.3f));
             // create mask area both heights
             var BottomBaseBlendResult = BlendMaskOverwrite(bottomAllOnes, baseLayer, expandedBottomBaseEdges, 0f, BASEHEIGHT);
             //smooth heights together
-            var BottomBaseSmoothed = SmoothVertices2D(BottomBaseBlendResult, factor: 0.7f, iterations: 70, ignoreZeroes: false);
+            var BottomBaseSmoothed = SmoothVertices2D(BottomBaseBlendResult, factor: (SMOOTHING_FACTOR * 0.8f), iterations: 230, ignoreZeroes: false);
 
             //CreateALayerHeightmap(BottomBaseSmoothed);
            // CreateALayer(expandedBottomBaseEdges, Colors.Gold);
@@ -185,18 +190,28 @@ namespace IsleForge.Pages
             //ordering these is important so they don't overwrite weirdly
             solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledBottomBaseSmoothed);
 
+            //the higher layers go on over it
             solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledMidLayer);
             solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledTopLayer);
-            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledTopBaseSmoothed, baseLayer);
-            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledTopMidSmoothed, baseLayer);
-            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledmidBaseSmoothed, baseLayer);
+
+            //maybe another weird mask
+            //expandedBottomBaseEdges
+            var expandedEdgeMasking = CreateLabeledMap(expandedBottomBaseEdges, "na");
+
+            //making a new mask for the other smoother things
+            float[,] LowerMask = SubtractLabeledMapsToFloatArray(labeledBaseMap, labeledBottomBaseSmoothed);//CombineLabeledMapsToFloatArray(labeledBottomBaseSmoothed, labeledBaseMap);
+            //SubtractLabeledMapsToFloatArray
+
+            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledTopBaseSmoothed, LowerMask);
+            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledTopMidSmoothed, LowerMask);
+            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledmidBaseSmoothed, LowerMask);
             
 
             RemoveNegativesFromLabeledMap(solvedMapWithLabels);
 
-            SmoothLabeledMap(solvedMapWithLabels, 0.4f, 3, ignoreZeroes: false);
+            SmoothLabeledMap(solvedMapWithLabels, 0.4f, 8, ignoreZeroes: false);
 
-            SaveLabeledMapToText("solvedMapWithLabels.txt", solvedMapWithLabels);
+            //SaveLabeledMapToText("solvedMapWithLabels.txt", solvedMapWithLabels);
             MapDataStore.AnnotatedHeightMap = solvedMapWithLabels;
 
             CreateLabeledHeightmapLayer(solvedMapWithLabels);
@@ -862,6 +877,108 @@ namespace IsleForge.Pages
             return result;
         }
 
+        public float[,] CombineLabeledMapsToFloatArray(LabeledValue[,] mapA, LabeledValue[,] mapB)
+        {
+            int width = mapA.GetLength(0);
+            int height = mapA.GetLength(1);
+
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float a = mapA[x, y].Value;
+                    float b = mapB[x, y].Value;
+
+                    if (a > 0)
+                        result[x, y] = 1;
+                    else if (b > 0)
+                        result[x, y] = 1;
+                    else
+                        result[x, y] = 0f;
+                }
+            }
+
+            return result;
+        }
+
+        public float[,] SubtractLabeledMapsToFloatArray(LabeledValue[,] mapA, LabeledValue[,] mapB)
+        {
+            int width = mapA.GetLength(0);
+            int height = mapA.GetLength(1);
+
+            float[,] result = new float[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float a = mapA[x, y].Value;
+                    float b = mapB[x, y].Value;
+
+                    if (b > 0)
+                    {
+                        //taking a tiny bit of a threshold here
+                        float tinyMargin = BASEHEIGHT * 0.02f;
+                        float HighBoundsForLowMask = BASEHEIGHT - tinyMargin;
+                        //this way, the mask for the overlays does not right over the area where it goes into the sea
+                        //but it also does not always end right before the edge.
+                        //I might increase the margin as needed
+
+                        if (b < HighBoundsForLowMask) //this is kinda important, that I don't want to erase this part
+                        {
+                            result[x, y] = 0;
+                        }
+                        else
+                        {
+                            result[x, y] = 1;
+                        }                           
+                    }                        
+                    else if (a > 0)
+                        result[x, y] = 1;
+                    else
+                        result[x, y] = 0f;
+                }
+            }
+
+            return result;
+        }
+
+        public LabeledValue[,] SimpleCombineLabeledMaps(LabeledValue[,] mapA, LabeledValue[,] mapB)
+        {
+            int width = mapA.GetLength(0);
+            int height = mapA.GetLength(1);
+
+            LabeledValue[,] result = new LabeledValue[width, height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    var a = mapA[x, y];
+                    var b = mapB[x, y];
+
+                    // Use value from A unless it's <= 0 and B has a positive value
+                    if (a.Value > 0)
+                    {
+                        result[x, y] = a;
+                    }
+                    else if (b.Value > 0)
+                    {
+                        result[x, y] = b;
+                    }
+                    else
+                    {
+                        result[x, y] = a; // keep empty (or zero) value from A
+                    }
+                }
+            }
+
+            return result;
+        }
+
+
 
         private float[,] SubtractWithRadius(float[,] mapA, float[,] mapB, int radius)
         {
@@ -954,6 +1071,8 @@ namespace IsleForge.Pages
 
             return result;
         }
+
+
 
         #endregion
 

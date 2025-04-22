@@ -219,8 +219,10 @@ namespace IsleForge.Pages
 
 
             Point3D center = GetMeshCenter(labeledHeightMap);
-            SetCameraToMesh(_viewport3D, center);
-
+            var RadiusIdea = EstimateNonZeroRadius(labeledHeightMap, center);
+            Debug.WriteLine($"Radius: {RadiusIdea}");            
+            SetCameraToMesh(_viewport3D, center, (float)RadiusIdea);
+            
 
             //Debug.WriteLine("this is for sure called");
             CreatedInitialMesh();
@@ -276,7 +278,7 @@ namespace IsleForge.Pages
             var seamMeshes = new Dictionary<string, MeshBuilder>();
             var uniqueLabels = new HashSet<string>();
 
-            double angleThreshold = 80.0;
+            double angleThreshold = 120.0;
 
             for (int y = 0; y < height - 1; y++)
             {
@@ -466,10 +468,39 @@ namespace IsleForge.Pages
             return new Point3D(sumX / count, sumY / count, sumZ / count);
         }
 
-        private void SetCameraToMesh(Viewport3D viewport, Point3D center)
+        private double EstimateNonZeroRadius(LabeledValue[,] heightMap, Point3D center)
+        {
+            int width = heightMap.GetLength(0);
+            int height = heightMap.GetLength(1);
+
+            double maxDistanceSquared = 0;
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float val = heightMap[x, y].Value;
+                    if (val > 0f)
+                    {
+                        double dx = x - center.X;
+                        double dz = y - center.Z;
+
+                        double distanceSquared = dx * dx + dz * dz;
+                        if (distanceSquared > maxDistanceSquared)
+                        {
+                            maxDistanceSquared = distanceSquared;
+                        }
+                    }
+                }
+            }
+
+            return Math.Sqrt(maxDistanceSquared);
+        }
+
+        private void SetCameraToMesh(Viewport3D viewport, Point3D center, float RadiusMath = 200)
         {
             // Pull the camera back and up from the center
-            Vector3D offset = new Vector3D(0, 300, 50);
+            Vector3D offset = new Vector3D(0, RadiusMath*2, 30);
             Point3D position = center + offset;
 
             Vector3D lookDirection = center - position;
