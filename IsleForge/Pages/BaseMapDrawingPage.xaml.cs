@@ -92,9 +92,6 @@ namespace IsleForge.Pages
         #endregion
 
         #region button behaviors
-
-        //temp buttons to match UI layout
-        private void StampShapeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e) { }
         private void ClearButton_Click(object sender, RoutedEventArgs e)
         {
             SaveState(); //start by saving the state for the undo
@@ -131,7 +128,15 @@ namespace IsleForge.Pages
                 case "Freehand":
                     _activeTool = new FreehandTool(color, brushSize);
                     break;
-
+                case "Paint Bucket":
+                    _activeTool = new PaintBucketTool(color);
+                    break;
+                case "Eraser":
+                    _activeTool = new EraserTool(brushSize);
+                    break;
+                case "Stamp":
+                    _activeTool = new StampTool(_stampShape, brushSize, color);
+                    break;
                 // other tools will be here
                 default:
                     _activeTool = new FreehandTool(color, brushSize); //this should be the default tool anyway
@@ -195,6 +200,7 @@ namespace IsleForge.Pages
 
         private void DrawingModeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            Debug.WriteLine($"called selection change");
             var combo = sender as ComboBox;
             var selected = (combo.SelectedItem as ComboBoxItem)?.Content.ToString();
 
@@ -203,7 +209,7 @@ namespace IsleForge.Pages
             if (tag == "DrawingMode")
             {
                 _drawingMode = selected ?? "Freehand";
-                _isPreviewingStamp = _drawingMode == "Stamp";
+                //_isPreviewingStamp = _drawingMode == "Stamp";
                 //RenderPreview();
             }
 
@@ -245,6 +251,16 @@ namespace IsleForge.Pages
 
             Debug.WriteLine($"RestrictToBaseLayer: {_restrictToBaseLayer}");
         } //when the checkbox changes, we send the mask and activate it. The mask is updated with tool changes, so it will keep up
+
+        private void StampShapeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            var StampShapeSelector = sender as ComboBox;
+            _stampShape = (StampShapeSelector.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Circle";
+
+            Debug.WriteLine($"_stampShape: {_stampShape}");
+            SetDrawingTool();
+        }
+
         #endregion
 
         #region save states
