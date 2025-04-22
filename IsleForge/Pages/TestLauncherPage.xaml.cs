@@ -31,7 +31,7 @@ namespace IsleForge.Pages
         private void TestLauncherPage_Loaded(object sender, RoutedEventArgs e)
         {
 
-            //LoadMeshMakerPage();
+            LoadMeshMakerPage();
         }
 
 

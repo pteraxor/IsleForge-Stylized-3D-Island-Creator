@@ -138,6 +138,25 @@ namespace IsleForge.Pages
             if (DetectedEdges != null)
             {
                 var edgeOverlay = CreateEdgeBitmap(_baseLayer.PixelWidth, _baseLayer.PixelHeight, DetectedEdges);
+
+                // Copy black edge pixels from overlay into _editLayer
+                using (edgeOverlay.GetBitmapContext())
+                using (_editLayer.GetBitmapContext())
+                {
+                    for (int y = 0; y < _editLayer.PixelHeight; y++)
+                    {
+                        for (int x = 0; x < _editLayer.PixelWidth; x++)
+                        {
+                            var pixel = edgeOverlay.GetPixel(x, y);
+
+                            if (pixel.A == 255 && pixel.R == 0 && pixel.G == 0 && pixel.B == 0)
+                            {
+                                _editLayer.SetPixel(x, y, Colors.Black);
+                            }
+                        }
+                    }
+                }
+
                 var edgeImage = new Image
                 {
                     Source = edgeOverlay,
@@ -155,6 +174,9 @@ namespace IsleForge.Pages
             // Set the drawing mask now that edges are available
             _drawingMask = CreateEdgeMask();
             SetDrawingTool(); // to refresh the tool with the new mask
+
+
+
 
             //everything that is okay now
             _nextButton.IsEnabled = true;
@@ -559,18 +581,31 @@ namespace IsleForge.Pages
                         // Analyze edit layer (edges)
                         Color edgePixel = _editLayer.GetPixel(x, y);
 
-                        if (edgePixel == Colors.Black)
+                        if (edgePixel.A == 255 && edgePixel.R == 0 && edgePixel.G == 0 && edgePixel.B == 0)
+                        {
+                            //Debug.WriteLine("a shear edge");
                             edgeLayer[x, y] = 1f;
+                        }                           
                         else if (edgePixel == Color.FromRgb(250, 140, 50))
+                        {
+                            //Debug.WriteLine("a 2 edge");
                             edgeLayer[x, y] = 2f;
+                        }                           
                         else if (edgePixel == Color.FromRgb(100, 70, 180))
+                        {
+                            //Debug.WriteLine("a 3 edge");
                             edgeLayer[x, y] = 3f;
+                        }
                         else
+                        {
                             edgeLayer[x, y] = 0f; // transparent or unmarked
+                        }
+                            
                     }
                 }
             }
 
+            DebugPrintFloatCounts("Edge", edgeLayer);
             // Store for next page
             MapDataStore.BaseLayer = baseLayer;
             MapDataStore.MidLayer = midLayer;
@@ -579,6 +614,33 @@ namespace IsleForge.Pages
             MapDataStore.FootPrint = footprint;
 
             Debug.WriteLine("Processing complete!");
+        }
+
+        private void DebugPrintFloatCounts(string label, float[,] layer)
+        {
+            Dictionary<float, int> counts = new Dictionary<float, int>();
+
+            int width = layer.GetLength(0);
+            int height = layer.GetLength(1);
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float value = layer[x, y];
+
+                    if (!counts.ContainsKey(value))
+                        counts[value] = 1;
+                    else
+                        counts[value]++;
+                }
+            }
+
+            Debug.WriteLine($"--- {label} Layer Float Value Counts ---");
+            foreach (var kvp in counts.OrderBy(kvp => kvp.Key))
+            {
+                Debug.WriteLine($"Value {kvp.Key}: {kvp.Value} pixels");
+            }
         }
 
 
@@ -593,7 +655,7 @@ namespace IsleForge.Pages
         private void Next_Click(object sender, RoutedEventArgs e)
         {
             Debug.WriteLine($"steps done: {EdgeChangesMade}");
-            //this.NavigationService?.Navigate(new HeightMapMaker());
+            
             //another dialogue box, like before
             if (EdgeChangesMade <= 0)
             {
@@ -611,7 +673,7 @@ namespace IsleForge.Pages
             }
 
             ProcessMapForHeightMap();
-
+            this.NavigationService?.Navigate(new HeightMapPage());
 
         }
 

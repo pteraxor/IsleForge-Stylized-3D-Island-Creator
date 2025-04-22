@@ -86,19 +86,28 @@ namespace IsleForge.Pages
             return;
         }
 
+        private void ExportMesh_Click(object sender, RoutedEventArgs e)
+        {
+            string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "heightmapGroup.obj");
+
+            ExportModelGroupToObj(_modelGroup, path);
+            return;
+
+        }
+
         #endregion
 
         #region loading
 
         private void LoadDataFromHeightMap()
         {
-            heightMap = MapDataStore.FinalHeightMap;
+            //heightMap = MapDataStore.FinalHeightMap;
             labeledHeightMap = MapDataStore.AnnotatedHeightMap;
-            MAXVALUE = GetMaxValue(heightMap);
+            MAXVALUE = MapDataStore.MaxHeightShare;//GetMaxValue(labeledHeightMap);
             Debug.WriteLine("Test data loaded.");
         }
 
-        private float GetMaxValue(float[,] data)
+        private float GetMaxValue(LabeledValue[,] data)
         {
             int width = data.GetLength(0);
             int height = data.GetLength(1);
@@ -109,9 +118,11 @@ namespace IsleForge.Pages
             {
                 for (int x = 0; x < width; x++)
                 {
-                    if (data[x, y] > max)
+                    float current = data[x, y].Value;
+
+                    if (current > max)
                     {
-                        max = data[x, y];
+                        max = current;
                     }
                 }
             }
@@ -477,7 +488,77 @@ namespace IsleForge.Pages
 
         #endregion
 
-        
+        #region mesh exporting
+
+        private void ExportModelGroupToObj(Model3DGroup modelGroup, string filePath)
+        {
+            using (StreamWriter writer = new StreamWriter(filePath))
+            {
+                writer.WriteLine("# Exported OBJ from Model3DGroup");
+
+                int vertexOffset = 1;
+
+                for (int modelIndex = 0; modelIndex < modelGroup.Children.Count; modelIndex++)
+                {
+                    if (!(modelGroup.Children[modelIndex] is GeometryModel3D geom))
+                        continue;
+
+                    string groupName = "group_" + modelIndex;
+
+                    if (geom.Material is DiffuseMaterial mat && mat.Brush is SolidColorBrush brush)
+                        groupName = brush.Color.ToString(); // Optional: use color as name
+
+                    if (!(geom.Geometry is MeshGeometry3D mesh))
+                        continue;
+
+                    writer.WriteLine($"g {groupName}");
+
+                    // Write vertices
+                    foreach (var pos in mesh.Positions)
+                        writer.WriteLine($"v {pos.X:0.######} {pos.Y:0.######} {pos.Z:0.######}");
+
+                    // Write normals (optional)
+                    bool hasNormals = mesh.Normals != null && mesh.Normals.Count == mesh.Positions.Count;
+                    if (hasNormals)
+                    {
+                        foreach (var n in mesh.Normals)
+                            writer.WriteLine($"vn {n.X:0.######} {n.Y:0.######} {n.Z:0.######}");
+                    }
+
+                    // Write UVs (optional)
+                    bool hasUVs = mesh.TextureCoordinates != null && mesh.TextureCoordinates.Count == mesh.Positions.Count;
+                    if (hasUVs)
+                    {
+                        foreach (var uv in mesh.TextureCoordinates)
+                            writer.WriteLine($"vt {uv.X:0.######} {uv.Y:0.######}");
+                    }
+
+                    // Write faces
+                    for (int i = 0; i < mesh.TriangleIndices.Count; i += 3)
+                    {
+                        int i0 = mesh.TriangleIndices[i] + vertexOffset;
+                        int i1 = mesh.TriangleIndices[i + 1] + vertexOffset;
+                        int i2 = mesh.TriangleIndices[i + 2] + vertexOffset;
+
+                        if (hasNormals && hasUVs)
+                            writer.WriteLine($"f {i0}/{i0}/{i0} {i1}/{i1}/{i1} {i2}/{i2}/{i2}");
+                        else if (hasUVs)
+                            writer.WriteLine($"f {i0}/{i0} {i1}/{i1} {i2}/{i2}");
+                        else if (hasNormals)
+                            writer.WriteLine($"f {i0}//{i0} {i1}//{i1} {i2}//{i2}");
+                        else
+                            writer.WriteLine($"f {i0} {i1} {i2}");
+                    }
+
+                    vertexOffset += mesh.Positions.Count;
+                }
+            }
+
+            MessageBox.Show("OBJ exported to:\n" + filePath);
+        }
+
+        #endregion
+
         #region viewing helpers
 
         private T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject

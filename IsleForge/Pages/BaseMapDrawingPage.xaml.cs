@@ -653,7 +653,7 @@ namespace IsleForge.Pages
         }
         private void Next_Click(object sender, RoutedEventArgs e)
         {
-            if (_canvasCoverage < 9)
+            if (_canvasCoverage < 6)
             {
                 var result = MessageBox.Show(
                     $"Only a small amount of the canvas is covered, are you sure you have drawn all you want to?",

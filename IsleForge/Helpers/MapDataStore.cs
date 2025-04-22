@@ -25,6 +25,7 @@ namespace IsleForge.Helpers
 
     public static class MapDataStore
     {
+        public static float[,] IntermediateMap { get; set; }
         public static float[,] BaseLayer { get; set; }
         public static float[,] MidLayer { get; set; }
         public static float[,] TopLayer { get; set; }
@@ -40,6 +41,7 @@ namespace IsleForge.Helpers
         public static float[,] FinalHeightMap { get; set; }
 
         public static LabeledValue[,] AnnotatedHeightMap { get; set; }
+        public static float MaxHeightShare { get; set; }
 
     }
 }
