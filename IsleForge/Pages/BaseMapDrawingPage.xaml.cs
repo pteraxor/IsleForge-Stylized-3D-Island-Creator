@@ -25,6 +25,7 @@ namespace IsleForge.Pages
     {
         #region top level variables
         private Canvas _drawCanvas;
+        private Canvas _previewCanvas;
         private WriteableBitmap _bitmap;
 
         private IDrawingTool _activeTool;
@@ -61,6 +62,7 @@ namespace IsleForge.Pages
         private void BaseMapDrawingPage_Loaded(object sender, RoutedEventArgs e)
         {
             _drawCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "DrawCanvas");
+            _previewCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "PreviewCanvas");
             _nextButton = HelperExtensions.FindElementByTag<Button>(this, "NextBtn");
 
             if (_drawCanvas != null)
@@ -183,8 +185,10 @@ namespace IsleForge.Pages
         }
         private void DrawCanvas_MouseMove(object sender, MouseEventArgs e)
         {
-            Point pos = e.GetPosition(_drawCanvas);
+            Point pos = e.GetPosition(_drawCanvas);           
             _activeTool?.OnMouseMove(pos, _bitmap);
+
+            DrawToolPreview(pos);
         }
 
         private void DrawCanvas_MouseUp(object sender, MouseButtonEventArgs e)
@@ -194,6 +198,93 @@ namespace IsleForge.Pages
             //LogCanvasCoverage();
             _ = LogCanvasCoverageAsync();
         }
+        #endregion
+
+        #region preview tools
+        private void DrawToolPreview(Point position)
+        {
+            if (_previewCanvas == null || _activeTool == null)
+                return;
+
+            _previewCanvas.Children.Clear();
+
+            Shape previewShape = null;
+
+            if (_drawingMode == "Freehand" || _drawingMode == "Eraser")
+            {
+                previewShape = new Ellipse
+                {
+                    Width = _drawingToolSize * 2,
+                    Height = _drawingToolSize * 2,
+                    Stroke = Brushes.Black,
+                    StrokeDashArray = new DoubleCollection { 2, 2 },
+                    StrokeThickness = 1
+                };
+
+                Canvas.SetLeft(previewShape, position.X - _drawingToolSize);
+                Canvas.SetTop(previewShape, position.Y - _drawingToolSize);
+            }
+            else if (_drawingMode == "Stamp")
+            {
+                int sides = _stampShape switch
+                {
+                    "Triangle" => 3,
+                    "Square" => 4,
+                    "Hexagon" => 6,
+                    _ => 0
+                };
+
+                if (sides > 0)
+                {
+                    previewShape = CreatePolygonPreview(sides, _drawingToolSize, Brushes.Black);
+
+                    Canvas.SetLeft(previewShape, position.X - _drawingToolSize);
+                    Canvas.SetTop(previewShape, position.Y - _drawingToolSize);
+                }
+                else if (_stampShape == "Circle")
+                {
+                    previewShape = new Ellipse
+                    {
+                        Width = _drawingToolSize * 2,
+                        Height = _drawingToolSize * 2,
+                        Stroke = Brushes.Black,
+                        StrokeDashArray = new DoubleCollection { 2, 2 },
+                        StrokeThickness = 1
+                    };
+
+                    Canvas.SetLeft(previewShape, position.X - _drawingToolSize);
+                    Canvas.SetTop(previewShape, position.Y - _drawingToolSize);
+                }
+            }
+
+            if (previewShape != null)
+                _previewCanvas.Children.Add(previewShape);
+        }
+
+        private Polygon CreatePolygonPreview(int sides, double radius, Brush stroke)
+        {
+            var polygon = new Polygon
+            {
+                Stroke = stroke,
+                StrokeThickness = 1,
+                StrokeDashArray = new DoubleCollection { 2, 2 },
+                Points = new PointCollection()
+            };
+
+            double angleOffset = sides == 3 ? -Math.PI / 2 : (sides == 4 ? Math.PI / 4 : 0);
+
+            for (int i = 0; i < sides; i++)
+            {
+                double angle = Math.PI * 2 * i / sides + angleOffset;
+                double x = radius + radius * Math.Cos(angle);
+                double y = radius + radius * Math.Sin(angle);
+                polygon.Points.Add(new Point(x, y));
+            }
+
+            return polygon;
+        }
+
+
         #endregion
 
         #region UI event parameter changes
@@ -231,6 +322,13 @@ namespace IsleForge.Pages
         private void BrushSizeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             _drawingToolSize = (int)e.NewValue;
+
+            var brushSizeLabel = HelperExtensions.FindElementByTag<TextBlock>(this, "BrushSizeLabel");
+            if (brushSizeLabel != null)
+            {
+                brushSizeLabel.Text = _drawingToolSize.ToString();
+            }
+            
 
             //recreate the active tool with the new size
             SetDrawingTool();
@@ -469,6 +567,84 @@ namespace IsleForge.Pages
         }
         #endregion
 
+        #region data exporting
+
+        private void ExportIntermediateMap()
+        {
+            if (_bitmap == null)
+            {
+                //MessageBox.Show("No bitmap to process.");
+                return;
+            }
+
+            int width = _bitmap.PixelWidth;
+            int height = _bitmap.PixelHeight;
+            float[,] intermediateMap = new float[width, height];
+
+            using (var context = _bitmap.GetBitmapContext())
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        Color pixel = _bitmap.GetPixel(x, y);
+
+                        // Ignore transparent pixels (optional)
+                        if (pixel.A < 10)
+                        {
+                            intermediateMap[x, y] = 0f;
+                            continue;
+                        }
+
+                        // Dominant channel mapping
+                        if (pixel.R > pixel.G && pixel.R > pixel.B)
+                        {
+                            intermediateMap[x, y] = 1f; // Red = Base
+                        }
+                        else if (pixel.G > pixel.R && pixel.G > pixel.B)
+                        {
+                            intermediateMap[x, y] = 2f; // Green = Mid
+                        }
+                        else if (pixel.B > pixel.R && pixel.B > pixel.G)
+                        {
+                            intermediateMap[x, y] = 3f; // Blue = Top
+                        }
+                        else
+                        {
+                            intermediateMap[x, y] = 0f; // Unmarked or neutral
+                        }
+                    }
+                }
+            }
+
+            // Store it
+            MapDataStore.IntermediateMap = intermediateMap;
+
+            // Export for next step
+            ExportLayerToText("IntermediateMap.txt", intermediateMap);
+        }
+
+        private void ExportLayerToText(string filename, float[,] data)
+        {
+            var sb = new StringBuilder();
+            int width = data.GetLength(0);
+            int height = data.GetLength(1);
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    sb.Append(data[x, y].ToString("0")).Append(" ");
+                }
+                sb.AppendLine();
+            }
+
+            System.IO.File.WriteAllText(filename, sb.ToString());
+        }
+
+
+        #endregion
+
         #region back and next buttons
 
         private void Back_Click(object sender, RoutedEventArgs e)
@@ -497,11 +673,12 @@ namespace IsleForge.Pages
             // Save a clone of the current bitmap into the manager
             if (_bitmap != null)
             {
+               ExportIntermediateMap();
                BitmapManager.Set("BaseLayer", _bitmap.Clone());                
             }
 
             // Navigate to next step
-            //this.NavigationService?.Navigate(new EdgeEditingPage());
+            this.NavigationService?.Navigate(new EdgeEditingPage());
         }
 
         #endregion
