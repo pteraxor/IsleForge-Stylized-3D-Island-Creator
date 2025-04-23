@@ -33,7 +33,9 @@ namespace IsleForge.Pages
 
         private Dictionary<string, Point3DCollection> originalMeshPositions = new Dictionary<string, Point3DCollection>();
 
-        private float MAXVALUE = 100f;
+        private float MAXVALUE = 32f;
+        private float MIDVALUE = 22f;
+        private float LOWVALUE = 12f;
 
         private Viewport3D _viewport3D;
         private Model3DGroup _modelGroup;
@@ -55,6 +57,9 @@ namespace IsleForge.Pages
 
             _viewport3D = FindVisualChild<Viewport3D>(this);
             _modelGroup = FindSceneModelGroup(_viewport3D);
+
+            MIDVALUE = MapDataStore.MidHeightShare;
+            LOWVALUE = MapDataStore.LowHeightShare;
 
             LoadDataFromHeightMap();
 
@@ -273,6 +278,549 @@ namespace IsleForge.Pages
         {
             int width = map.GetLength(0);
             int height = map.GetLength(1);
+            float heightThreshold = 1f;
+
+            var labelMeshes = new Dictionary<string, MeshBuilder>();
+
+            for (int y = 0; y < height - 1; y++)
+            {
+                for (int x = 0; x < width - 1; x++)
+                {
+                    var v00 = map[x, y];
+                    var v10 = map[x + 1, y];
+                    var v01 = map[x, y + 1];
+                    var v11 = map[x + 1, y + 1];
+
+                    // === Height-based classification ===
+                    float h00 = v00.Value;
+                    float h10 = v10.Value;
+                    float h01 = v01.Value;
+                    float h11 = v11.Value;
+
+                    float heightAverage = (h00 + h10 + h01 + h11) / 4;
+                    //moving this here so I can use it anywhere
+
+                    //getting height spread to find overly stretched triangles
+                    float[] heights = new[] { h00, h10, h01, h11 };
+                    float maxH = heights.Max();
+                    float minH = heights.Min();
+                    float heightSpread = maxH - minH;
+
+
+                    if (v00.Value <= 0 || v10.Value <= 0 || v01.Value <= 0 || v11.Value <= 0)
+                        continue;
+
+                    var labels = new[] { v00.Label, v10.Label, v01.Label, v11.Label };
+                    var labelSet = new HashSet<string>(labels);
+
+                    Point3D p00 = new Point3D(x, v00.Value, y);
+                    Point3D p10 = new Point3D(x + 1, v10.Value, y);
+                    Point3D p01 = new Point3D(x, v01.Value, y + 1);
+                    Point3D p11 = new Point3D(x + 1, v11.Value, y + 1);
+
+                    // Allow ramps and beaches by label
+
+                    if (labelSet.Contains("beach"))
+                    {
+                        string fallbackLabel = labels.First(l => l == "ramp" || l == "beach");
+                        if (!labelMeshes.ContainsKey(fallbackLabel))
+                            labelMeshes[fallbackLabel] = new MeshBuilder();
+
+                        var builder = labelMeshes[fallbackLabel];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                        continue;
+                    }
+
+                    float maxSpreadThreshold = 3.0f; //for the ramp, some need to be stretched
+                    if (heightSpread > maxSpreadThreshold)
+                    {
+                        continue;
+                    }
+
+                    if (labelSet.Contains("ramp"))
+                    {
+                        if (Math.Abs(heightAverage - LOWVALUE) > heightThreshold)
+                        {
+                            string fallbackLabel = labels.First(l => l == "ramp");
+                            if (!labelMeshes.ContainsKey(fallbackLabel))
+                                labelMeshes[fallbackLabel] = new MeshBuilder();
+
+                            var builder = labelMeshes[fallbackLabel];
+                            builder.AddTriangle(p00, p11, p10);
+                            builder.AddTriangle(p00, p01, p11);
+                            continue;
+                        }
+                    }
+
+                    //skipping very stretched triangles----------------
+
+
+                    // Skip triangle if has large vertical difference
+                    maxSpreadThreshold = 2.0f; //finer for the non ramped portions
+                    if (heightSpread > maxSpreadThreshold)
+                    {
+                        continue;
+                    }
+                    //skipping very stretched triangles----------------  
+
+
+                    //Debug.WriteLine($"Avg: {heightAverage:F2}  LOW: {LOWVALUE}, MID: {MIDVALUE}, MAX: {MAXVALUE}");
+
+
+                    // BASE
+                    if (Math.Abs(heightAverage - LOWVALUE) <= heightThreshold)
+                    {
+                        if (!labelMeshes.ContainsKey("Base"))
+                            labelMeshes["Base"] = new MeshBuilder();
+
+                        var builder = labelMeshes["Base"];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                        continue;
+                    }
+
+                    // MID
+                    else if (Math.Abs(heightAverage - MIDVALUE) <= heightThreshold)
+                    {
+                        if (!labelMeshes.ContainsKey("Mid"))
+                            labelMeshes["Mid"] = new MeshBuilder();
+
+                        var builder = labelMeshes["Mid"];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                        continue;
+                    }
+                    // TOP
+                    else if (Math.Abs(heightAverage - MAXVALUE) <= heightThreshold)
+                    {
+                        if (!labelMeshes.ContainsKey("Top"))
+                            labelMeshes["Top"] = new MeshBuilder();
+
+                        var builder = labelMeshes["Top"];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                        continue;
+                    }
+
+                    // Skip everything else (likely transitions)
+                }
+            }
+
+            var finalMeshes = new Dictionary<string, MeshGeometry3D>();
+            foreach (var kvp in labelMeshes)
+                finalMeshes[kvp.Key] = kvp.Value.Mesh;
+
+            Debug.WriteLine("Generated height-based layers: " + string.Join(", ", finalMeshes.Keys));
+
+            return finalMeshes;
+        }
+
+
+
+        #region skirting
+        private Dictionary<string, MeshGeometry3D> AddSkirtsToMeshesRemeshed(Dictionary<string, MeshGeometry3D> input)
+        {
+            var result = new Dictionary<string, MeshGeometry3D>(input);
+            int segments = 4; // vertical resolution — tweak this for more detail
+
+            foreach (var kvp in input)
+            {
+                string label = kvp.Key;
+                var mesh = kvp.Value;
+                var skirtBuilder = new MeshBuilder();
+
+                var positions = mesh.Positions;
+                var triangles = mesh.TriangleIndices;
+
+                var edgeSet = new HashSet<(Point3D, Point3D)>();
+
+                for (int i = 0; i < triangles.Count; i += 3)
+                {
+                    var a = positions[triangles[i]];
+                    var b = positions[triangles[i + 1]];
+                    var c = positions[triangles[i + 2]];
+
+                    AddOrRemoveEdge(edgeSet, a, b);
+                    AddOrRemoveEdge(edgeSet, b, c);
+                    AddOrRemoveEdge(edgeSet, c, a);
+                }
+
+                foreach (var (top1, top2) in edgeSet)
+                {
+                    for (int i = 0; i < segments; i++)
+                    {
+                        double t1 = (double)i / segments;
+                        double t2 = (double)(i + 1) / segments;
+
+                        // interpolate along edge
+                        Point3D p1Top = Interpolate(top1, top2, t1);
+                        Point3D p2Top = Interpolate(top1, top2, t2);
+
+                        Point3D p1Bottom = new Point3D(p1Top.X, 0, p1Top.Z);
+                        Point3D p2Bottom = new Point3D(p2Top.X, 0, p2Top.Z);
+
+                        // Add two triangles per vertical quad
+                        skirtBuilder.AddTriangle(p1Top, p2Top, p1Bottom);
+                        skirtBuilder.AddTriangle(p1Bottom, p2Top, p2Bottom);
+                    }
+                }
+
+                result[label + "_skirt"] = skirtBuilder.Mesh;
+            }
+
+            return result;
+        }
+
+        private Point3D Interpolate(Point3D a, Point3D b, double t)
+        {
+            return new Point3D(
+                a.X + (b.X - a.X) * t,
+                a.Y + (b.Y - a.Y) * t,
+                a.Z + (b.Z - a.Z) * t
+            );
+        }
+
+        private Dictionary<string, MeshGeometry3D> AddSkirtsToMeshes(Dictionary<string, MeshGeometry3D> input)
+        {
+            var result = new Dictionary<string, MeshGeometry3D>(input);
+
+            foreach (var kvp in input)
+            {
+                string label = kvp.Key;
+                var mesh = kvp.Value;
+                var skirtBuilder = new MeshBuilder();
+
+                var positions = mesh.Positions;
+                var triangles = mesh.TriangleIndices;
+
+                var edgeSet = new HashSet<(Point3D, Point3D)>();
+
+                // Identify edges used only once (border edges)
+                for (int i = 0; i < triangles.Count; i += 3)
+                {
+                    var a = positions[triangles[i]];
+                    var b = positions[triangles[i + 1]];
+                    var c = positions[triangles[i + 2]];
+
+                    AddOrRemoveEdge(edgeSet, a, b);
+                    AddOrRemoveEdge(edgeSet, b, c);
+                    AddOrRemoveEdge(edgeSet, c, a);
+                }
+
+                // Build skirt faces from those edges
+                foreach (var (p1, p2) in edgeSet)
+                {
+                    Point3D g1 = new Point3D(p1.X, 0, p1.Z);
+                    Point3D g2 = new Point3D(p2.X, 0, p2.Z);
+
+                    skirtBuilder.AddTriangle(p1, p2, g1);
+                    skirtBuilder.AddTriangle(g1, p2, g2);
+                }
+
+                result[label + "_skirt"] = skirtBuilder.Mesh;
+            }
+
+            return result;
+        }
+
+        private void AddOrRemoveEdge(HashSet<(Point3D, Point3D)> edgeSet, Point3D a, Point3D b)
+        {
+            var edge = (a, b);
+            var reverse = (b, a);
+            if (edgeSet.Contains(reverse))
+                edgeSet.Remove(reverse);
+            else if (!edgeSet.Add(edge))
+                edgeSet.Remove(edge); // prevent duplicates
+        }
+
+
+        #endregion
+
+        private Dictionary<string, MeshGeometry3D> CreateMeshesByLabelKindaSkirt(LabeledValue[,] map)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
+
+            var labelMeshes = new Dictionary<string, MeshBuilder>();
+            var seamMeshes = new Dictionary<string, MeshBuilder>();
+            var uniqueLabels = new HashSet<string>();
+
+            //trying threshold logic
+            double gradientThreshold = 0.2; //control seam sensitivity
+
+            for (int y = 0; y < height - 1; y++)
+            {
+                for (int x = 0; x < width - 1; x++)
+                {
+                    var v00 = map[x, y];
+                    var v10 = map[x + 1, y];
+                    var v01 = map[x, y + 1];
+                    var v11 = map[x + 1, y + 1];
+
+                    if (v00.Value <= 0 || v10.Value <= 0 || v01.Value <= 0 || v11.Value <= 0)
+                        continue;
+
+                    var labels = new[] { v00.Label, v10.Label, v01.Label, v11.Label };
+                    var labelSet = new HashSet<string>(labels);
+                    foreach (var label in labelSet) uniqueLabels.Add(label);
+
+                    Point3D p00 = new Point3D(x, v00.Value, y);
+                    Point3D p10 = new Point3D(x + 1, v10.Value, y);
+                    Point3D p01 = new Point3D(x, v01.Value, y + 1);
+                    Point3D p11 = new Point3D(x + 1, v11.Value, y + 1);
+
+                    // Same label for all 4 corners, but we need to check angle before blindly assigning
+                    if (labelSet.Count == 1)
+                    {
+                        string label = labels[0];
+
+                        // Compute the normal
+                        Vector3D normal = CalculateAverageNormal(p00, p11, p10, p01);
+                        double angle = Vector3D.AngleBetween(normal, new Vector3D(0, 1, 0));
+
+                        bool isTooSteep = angle > 80; // threshold to define "too vertical" for base/mid/top
+
+                        if (label == "Base" || label == "Mid" || label == "Top")
+                        {
+                            if (isTooSteep)
+                            {
+                                // Skip this quad for now — let the skirt handle it
+                                continue;
+                            }
+                        }
+
+                        // safe to assign normally
+                        if (!labelMeshes.ContainsKey(label))
+                            labelMeshes[label] = new MeshBuilder();
+
+                        var builder = labelMeshes[label];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                        continue;
+                    }
+
+                    /*
+                    //Use gradient to decide split direction(pre threshold version)
+                    Vector3D gradient = new Vector3D(
+                        (v10.Value - v00.Value + v11.Value - v01.Value), // x direction (left→right)
+                        0,
+                        (v01.Value - v00.Value + v11.Value - v10.Value)  // z direction (top→bottom)
+                    );
+                    gradient.Normalize();
+                    */
+
+                    //trying threshold version
+                    double dx = (v10.Value - v00.Value + v11.Value - v01.Value);
+                    double dz = (v01.Value - v00.Value + v11.Value - v10.Value);
+                    Vector3D gradient = new Vector3D(dx, 0, dz);
+                    double gradientStrength = gradient.Length;
+                    //end trying threshold version
+
+                    // Decide based on height difference across diagonals
+                    double diag1 = Math.Abs(v00.Value - v11.Value);
+                    double diag2 = Math.Abs(v10.Value - v01.Value);
+                    bool splitDiag1 = diag1 >= diag2;
+
+                    string seamKey = "seam_" + string.Join("_", labelSet.OrderBy(l => l));
+
+                    /*
+                    //pre threshold version
+                    if (!seamMeshes.ContainsKey(seamKey))
+                        seamMeshes[seamKey] = new MeshBuilder();
+                    */
+                    //thresh start
+                    if (gradientStrength < gradientThreshold)
+                    {
+                        // Consider this quad "flat enough", fallback to dominant label
+                        string fallbackLabel = GetMostCommonLabel(labels);
+                        if (!labelMeshes.ContainsKey(fallbackLabel))
+                            labelMeshes[fallbackLabel] = new MeshBuilder();
+
+                        var builder = labelMeshes[fallbackLabel];
+
+                        if (diag1 > diag2)
+                        {
+                            builder.AddTriangle(p00, p11, p10);
+                            builder.AddTriangle(p00, p01, p11);
+                        }
+                        else
+                        {
+                            builder.AddTriangle(p00, p01, p10);
+                            builder.AddTriangle(p01, p11, p10);
+                        }
+                        continue;
+                    }
+
+                    // If slope is steep enough, create seam
+                    if (!seamMeshes.ContainsKey(seamKey))
+                        seamMeshes[seamKey] = new MeshBuilder();
+                    //thresh end
+
+                    var seamBuilder = seamMeshes[seamKey];
+
+                    if (splitDiag1)
+                    {
+                        seamBuilder.AddTriangle(p00, p11, p10);
+                        seamBuilder.AddTriangle(p00, p01, p11);
+                    }
+                    else
+                    {
+                        seamBuilder.AddTriangle(p00, p01, p10);
+                        seamBuilder.AddTriangle(p01, p11, p10);
+                    }
+                }
+            }
+
+            // Convert to MeshGeometry3D
+            var finalMeshes = new Dictionary<string, MeshGeometry3D>();
+            foreach (var kvp in labelMeshes)
+                finalMeshes[kvp.Key] = kvp.Value.Mesh;
+            foreach (var kvp in seamMeshes)
+                finalMeshes[kvp.Key] = kvp.Value.Mesh;
+
+            Debug.WriteLine("Unique labels found in mesh: " + string.Join(", ", uniqueLabels.OrderBy(l => l)));
+
+            //trying a new extra step
+            return AddSkirtsToMeshesRemeshed(finalMeshes);
+            //return finalMeshes; //old working one
+        }
+
+        private Dictionary<string, MeshGeometry3D> CreateMeshesByLabelPreskirt(LabeledValue[,] map)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
+
+            var labelMeshes = new Dictionary<string, MeshBuilder>();
+            var seamMeshes = new Dictionary<string, MeshBuilder>();
+            var uniqueLabels = new HashSet<string>();
+
+            //trying threshold logic
+            double gradientThreshold = 0.2; //control seam sensitivity
+
+            for (int y = 0; y < height - 1; y++)
+            {
+                for (int x = 0; x < width - 1; x++)
+                {
+                    var v00 = map[x, y];
+                    var v10 = map[x + 1, y];
+                    var v01 = map[x, y + 1];
+                    var v11 = map[x + 1, y + 1];
+
+                    if (v00.Value <= 0 || v10.Value <= 0 || v01.Value <= 0 || v11.Value <= 0)
+                        continue;
+
+                    var labels = new[] { v00.Label, v10.Label, v01.Label, v11.Label };
+                    var labelSet = new HashSet<string>(labels);
+                    foreach (var label in labelSet) uniqueLabels.Add(label);
+
+                    Point3D p00 = new Point3D(x, v00.Value, y);
+                    Point3D p10 = new Point3D(x + 1, v10.Value, y);
+                    Point3D p01 = new Point3D(x, v01.Value, y + 1);
+                    Point3D p11 = new Point3D(x + 1, v11.Value, y + 1);
+
+                    // Same label for all 4 corners
+                    if (labelSet.Count == 1)
+                    {
+                        string label = labels[0];
+                        if (!labelMeshes.ContainsKey(label))
+                            labelMeshes[label] = new MeshBuilder();
+
+                        var builder = labelMeshes[label];
+                        builder.AddTriangle(p00, p11, p10);
+                        builder.AddTriangle(p00, p01, p11);
+                        continue;
+                    }
+
+                    /*
+                    //Use gradient to decide split direction(pre threshold version)
+                    Vector3D gradient = new Vector3D(
+                        (v10.Value - v00.Value + v11.Value - v01.Value), // x direction (left→right)
+                        0,
+                        (v01.Value - v00.Value + v11.Value - v10.Value)  // z direction (top→bottom)
+                    );
+                    gradient.Normalize();
+                    */
+
+                    //trying threshold version
+                    double dx = (v10.Value - v00.Value + v11.Value - v01.Value);
+                    double dz = (v01.Value - v00.Value + v11.Value - v10.Value);
+                    Vector3D gradient = new Vector3D(dx, 0, dz);
+                    double gradientStrength = gradient.Length;
+                    //end trying threshold version
+
+                    // Decide based on height difference across diagonals
+                    double diag1 = Math.Abs(v00.Value - v11.Value);
+                    double diag2 = Math.Abs(v10.Value - v01.Value);
+                    bool splitDiag1 = diag1 >= diag2;
+
+                    string seamKey = "seam_" + string.Join("_", labelSet.OrderBy(l => l));
+
+                    /*
+                    //pre threshold version
+                    if (!seamMeshes.ContainsKey(seamKey))
+                        seamMeshes[seamKey] = new MeshBuilder();
+                    */
+                    //thresh start
+                    if (gradientStrength < gradientThreshold)
+                    {
+                        // Consider this quad "flat enough", fallback to dominant label
+                        string fallbackLabel = GetMostCommonLabel(labels);
+                        if (!labelMeshes.ContainsKey(fallbackLabel))
+                            labelMeshes[fallbackLabel] = new MeshBuilder();
+
+                        var builder = labelMeshes[fallbackLabel];
+
+                        if (diag1 > diag2)
+                        {
+                            builder.AddTriangle(p00, p11, p10);
+                            builder.AddTriangle(p00, p01, p11);
+                        }
+                        else
+                        {
+                            builder.AddTriangle(p00, p01, p10);
+                            builder.AddTriangle(p01, p11, p10);
+                        }
+                        continue;
+                    }
+
+                    // If slope is steep enough, create seam
+                    if (!seamMeshes.ContainsKey(seamKey))
+                        seamMeshes[seamKey] = new MeshBuilder();
+                    //thresh end
+
+                    var seamBuilder = seamMeshes[seamKey];
+
+                    if (splitDiag1)
+                    {
+                        seamBuilder.AddTriangle(p00, p11, p10);
+                        seamBuilder.AddTriangle(p00, p01, p11);
+                    }
+                    else
+                    {
+                        seamBuilder.AddTriangle(p00, p01, p10);
+                        seamBuilder.AddTriangle(p01, p11, p10);
+                    }
+                }
+            }
+
+            // Convert to MeshGeometry3D
+            var finalMeshes = new Dictionary<string, MeshGeometry3D>();
+            foreach (var kvp in labelMeshes)
+                finalMeshes[kvp.Key] = kvp.Value.Mesh;
+            foreach (var kvp in seamMeshes)
+                finalMeshes[kvp.Key] = kvp.Value.Mesh;
+
+            Debug.WriteLine("Unique labels found in mesh: " + string.Join(", ", uniqueLabels.OrderBy(l => l)));
+
+            //trying a new extra step
+            return finalMeshes; //old working one
+        }
+
+        private Dictionary<string, MeshGeometry3D> CreateMeshesByLabelFirstGood(LabeledValue[,] map)
+        {
+            int width = map.GetLength(0);
+            int height = map.GetLength(1);
 
             var labelMeshes = new Dictionary<string, MeshBuilder>();
             var seamMeshes = new Dictionary<string, MeshBuilder>();
@@ -411,14 +959,14 @@ namespace IsleForge.Pages
         {
 
             //Base, beach, Mid, None, ramp, Top
-            // You can use fixed colors for known labels:
-            if (label == "Mid") return Colors.Green;
+            //can use fixed colors for known labels:
+            if (label == "Mid") return Colors.LightGreen;
             if (label == "Base") return Colors.Green;
-            if (label == "ramp") return Colors.Green;
-            if (label == "Top") return Colors.Green;
+            if (label == "ramp") return Colors.Aqua;
+            if (label == "Top") return Colors.ForestGreen;
             if (label == "none") return Colors.Blue;
             if (label == "beach") return Colors.Goldenrod;
-            if (label == "cliff") return Colors.Gray;
+            if (label == "cliff") return Colors.DarkKhaki;
             //WEIRDLOL
             if (label == "WEIRDLOL") return Colors.Magenta;
 
@@ -500,7 +1048,7 @@ namespace IsleForge.Pages
         private void SetCameraToMesh(Viewport3D viewport, Point3D center, float RadiusMath = 200)
         {
             // Pull the camera back and up from the center
-            Vector3D offset = new Vector3D(0, RadiusMath*2, 30);
+            Vector3D offset = new Vector3D(-50, RadiusMath*2, 90);
             Point3D position = center + offset;
 
             Vector3D lookDirection = center - position;
