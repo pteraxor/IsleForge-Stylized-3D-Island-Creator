@@ -654,7 +654,7 @@ namespace IsleForge.Pages
                 MeshDataStore.CameraUpDirection = camera.UpDirection;
             }
 
-            //NavigationService.Navigate(new TextureAndBumpPage());
+            NavigationService.Navigate(new TexturePage());
         }
 
         #endregion

@@ -15,7 +15,7 @@ using System.Windows.Shapes;
 using System.Diagnostics;
 using System.Windows.Media.Media3D;
 using System.IO;
-//using IsleForge.Dialogues;
+using IsleForge.Dialogues;
 using IsleForge.Helpers;
 
 namespace IsleForge.Pages
@@ -94,7 +94,7 @@ namespace IsleForge.Pages
 
         #region custom texturing
 
-        /*
+        
         private void UploadTexture_Click(object sender, RoutedEventArgs e)
         {
             //UploadTextureForType("grass");
@@ -111,7 +111,7 @@ namespace IsleForge.Pages
                     UploadTextureForType(selectedType);
                 }
             }
-        }*/
+        }
 
         private void UploadTextureForType(string type)
         {
@@ -217,7 +217,7 @@ namespace IsleForge.Pages
             Debug.WriteLine("Entered Tiling brush");
             try
             {
-                var uri = new Uri($"pack://application:,,,/Prototyping;component/Resources/Textures/{relativePath}", UriKind.Absolute);
+                var uri = new Uri($"pack://application:,,,/IsleForge;component/Resources/Textures/{relativePath}", UriKind.Absolute);
                 var image = new BitmapImage(uri)
                 {
                     CacheOption = BitmapCacheOption.OnLoad
