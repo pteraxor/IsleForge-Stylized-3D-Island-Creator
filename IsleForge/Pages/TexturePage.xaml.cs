@@ -37,9 +37,18 @@ namespace IsleForge.Pages
         private ImageBrush _rockBrush;
         private ImageBrush _sandBrush;
 
+        private BitmapSource _grassBitmapSource;
+        private BitmapSource _rockBitmapSource;
+        private BitmapSource _sandBitmapSource;
+
+        private MeshGeometry3D combinedMesh;
+        private WriteableBitmap builtTexture;
+
         private const string DefaultGrass = "GrassAlbedo.png";
         private const string DefaultRock = "RockAlbedo.png";
         private const string DefaultSand = "SandAlbedo.png";
+
+        public double TileScale = 1;
 
         private List<(double U, double V, string Label)> _collectedUVs = new();
         string[,] labelGrid;
@@ -85,32 +94,30 @@ namespace IsleForge.Pages
             _modelGroup.Children.Clear();
 
 
-
-
-            var grass = LoadBitmap("GrassAlbedo.png");
-            var rock = LoadBitmap("RockAlbedo.png");
-            var sand = LoadBitmap("SandAlbedo.png");
+            _grassBitmapSource = LoadBitmap("GrassAlbedo.png");
+            _rockBitmapSource = LoadBitmap("RockAlbedo.png");
+            _sandBitmapSource = LoadBitmap("SandAlbedo.png");
 
 
             var debugTexture = GenerateDebugLabelTexture(_meshes, 1024, 1024);
 
             SaveBitmapToFile(debugTexture, "terrain-debug.png");
 
-            var finalTex = GenerateFinalTextureFromLabelGrid(
+            builtTexture = GenerateFinalTextureFromLabelGrid(
                 labelGrid,
-                grass, rock, sand,
+                _grassBitmapSource, _rockBitmapSource, _sandBitmapSource,
                 1024, 1024,
-                tileScale: 0.05
+                tileScale: TileScale
             );
 
             //var material = new DiffuseMaterial(new ImageBrush(debugTexture) { Stretch = Stretch.Fill });
-            var material = new DiffuseMaterial(new ImageBrush(finalTex) { Stretch = Stretch.Fill });
+            var material = new DiffuseMaterial(new ImageBrush(builtTexture) { Stretch = Stretch.Fill });
 
             _modelGroup.Children.Clear();
 
             //redo mesh making
 
-            var combinedMesh = CombineMeshes(_meshes);
+            combinedMesh = CombineMeshes(_meshes);
             ApplyTopDownUV(combinedMesh, 0.1);
 
 
@@ -151,6 +158,42 @@ namespace IsleForge.Pages
 
             if (openFileDialog.ShowDialog() == true)
             {
+                var imagePath = openFileDialog.FileName;
+
+                var brush = LoadTilingBrushFromFile(imagePath);
+                var bitmap = LoadBitmapSourceFromFile(imagePath);//new BitmapImage(new Uri(imagePath, UriKind.Absolute));
+
+                switch (type.ToLower())
+                {
+                    case "grass":
+                        _grassBrush = brush;
+                        _grassBitmapSource = bitmap;
+                        break;
+                    case "sand":
+                        _sandBrush = brush;
+                        _sandBitmapSource = bitmap;
+                        break;
+                    case "rock":
+                        _rockBrush = brush;
+                        _rockBitmapSource = bitmap;
+                        break;
+                }
+
+                GoodRetexture();
+            }
+        }
+
+
+        private void UploadTextureForTypeOld(string type)
+        {
+            var openFileDialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Filter = "Image Files|*.png;*.jpg;*.jpeg;*.bmp",
+                Title = $"Select {type} Texture"
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
                 var brush = LoadTilingBrushFromFile(openFileDialog.FileName);
 
                 switch (type.ToLower())
@@ -177,6 +220,10 @@ namespace IsleForge.Pages
             _grassBrush = LoadTilingBrush(DefaultGrass);
             _rockBrush = LoadTilingBrush(DefaultRock);
             _sandBrush = LoadTilingBrush(DefaultSand);
+
+            _grassBitmapSource = LoadBitmap("GrassAlbedo.png");
+            _rockBitmapSource = LoadBitmap("RockAlbedo.png");
+            _sandBitmapSource = LoadBitmap("SandAlbedo.png");
 
             //RetextureScene();
             GoodRetexture();
@@ -207,37 +254,21 @@ namespace IsleForge.Pages
 
         private void GoodRetexture()
         {
-            return;
-            //_grassBrush = LoadTilingBrush(DefaultGrass);
-            //_rockBrush = LoadTilingBrush(DefaultRock);
-            //_sandBrush = LoadTilingBrush(DefaultSand);
-
-            _viewport3D = FindViewport3D(this);
-            _modelGroup = FindSceneModelGroup(_viewport3D);
 
             _modelGroup.Children.Clear();
+            
+            builtTexture = GenerateFinalTextureFromLabelGrid(
+                labelGrid,
+                _grassBitmapSource, _rockBitmapSource, _sandBitmapSource,
+                1024, 1024,
+                tileScale: TileScale
+            );
 
-
-            foreach (var kvp in _meshes)
-            {
-                string label = kvp.Key;
-                var mesh = kvp.Value;
-
-                //ApplyTextureCoordinatesLabel(mesh, 0.1, label); // UVs scaled for tiling
-
-                var material = new DiffuseMaterial(GetTextureForLabel(label));
-
-                var model = new GeometryModel3D(mesh, material)
-                {
-                    BackMaterial = material
-                };
-
-                _modelGroup.Children.Add(model);
-            }
-
-
+            var material = new DiffuseMaterial(new ImageBrush(builtTexture) { Stretch = Stretch.Fill });
+            _modelGroup.Children.Add(new GeometryModel3D(combinedMesh, material));
 
             SetCameraToMesh();
+          
         }
 
 
@@ -324,6 +355,97 @@ namespace IsleForge.Pages
 
         #endregion
 
+        #region UI changes
+
+        private void TextureSizeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            TileScale = e.NewValue;
+
+            var brushSizeLabel = HelperExtensions.FindElementByTag<TextBlock>(this, "TextureSizeLabel");
+            if (brushSizeLabel != null)
+            {
+                brushSizeLabel.Text = TileScale.ToString();
+            }
+
+
+            Debug.WriteLine($"Brush size changed to {TileScale}");
+        }
+
+        private void ExportTexture_Click(object sender, RoutedEventArgs e)
+        {
+            var saveDialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Filter = "PNG Image|*.png",
+                Title = "Save Generated Texture"
+            };
+
+            if (saveDialog.ShowDialog() == true)
+            {
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(builtTexture));
+
+                using (var stream = new FileStream(saveDialog.FileName, FileMode.Create))
+                {
+                    encoder.Save(stream);
+                }
+
+                MessageBox.Show("Texture saved to:\n" + saveDialog.FileName, "Export Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        private void ExportMesh_Click(object sender, RoutedEventArgs e)
+        {
+            Debug.WriteLine($"UV count: {combinedMesh.TextureCoordinates.Count}");
+            Debug.WriteLine($"Vertex count: {combinedMesh.Positions.Count}");
+
+            var saveDialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Filter = "Wavefront OBJ|*.obj",
+                Title = "Save Combined Mesh"
+            };
+
+            if (saveDialog.ShowDialog() == true)
+            {
+                using (var writer = new StreamWriter(saveDialog.FileName))
+                {
+                    writer.WriteLine("# Exported OBJ mesh");
+
+                    // Write vertex positions
+                    foreach (var p in combinedMesh.Positions)
+                        writer.WriteLine($"v {p.X:0.######} {p.Y:0.######} {p.Z:0.######}");
+
+                    // Write UVs (if available)
+                    bool hasUVs = combinedMesh.TextureCoordinates != null &&
+                                  combinedMesh.TextureCoordinates.Count == combinedMesh.Positions.Count;
+
+                    if (hasUVs)
+                    {
+                        foreach (var uv in combinedMesh.TextureCoordinates)
+                            writer.WriteLine($"vt {uv.X:0.######} {1.0 - uv.Y:0.######}"); // Flip V for compatibility
+                    }
+
+                    // Write faces
+                    for (int i = 0; i < combinedMesh.TriangleIndices.Count; i += 3)
+                    {
+                        int i0 = combinedMesh.TriangleIndices[i] + 1;
+                        int i1 = combinedMesh.TriangleIndices[i + 1] + 1;
+                        int i2 = combinedMesh.TriangleIndices[i + 2] + 1;
+
+                        if (hasUVs)
+                            writer.WriteLine($"f {i0}/{i0} {i1}/{i1} {i2}/{i2}");
+                        else
+                            writer.WriteLine($"f {i0} {i1} {i2}");
+                    }
+                }
+
+                MessageBox.Show("Mesh saved to:\n" + saveDialog.FileName, "Export Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+
+
+        #endregion
+
         #region carry over
 
 
@@ -372,6 +494,29 @@ namespace IsleForge.Pages
         #region trying new  methods
 
 
+        private BitmapSource LoadBitmapSourceFromFile(string path)
+        {
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.UriSource = new Uri(path, UriKind.Absolute);
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.EndInit();
+            bitmap.Freeze();
+
+            // Convert to Bgra32 if needed
+            if (bitmap.Format != PixelFormats.Bgra32)
+            {
+                var converted = new FormatConvertedBitmap();
+                converted.BeginInit();
+                converted.Source = bitmap;
+                converted.DestinationFormat = PixelFormats.Bgra32;
+                converted.EndInit();
+                converted.Freeze();
+                return converted;
+            }
+
+            return bitmap;
+        }
 
 
         private BitmapSource LoadBitmap(string relativePath)
@@ -595,7 +740,7 @@ namespace IsleForge.Pages
             Debug.WriteLine($"Saved debug texture to: {path}");
         }
 
-        private MeshGeometry3D CombineMeshes(Dictionary<string, MeshGeometry3D> meshes)
+        private MeshGeometry3D CombineMeshesTooSharp(Dictionary<string, MeshGeometry3D> meshes)
         {
             var combined = new MeshGeometry3D();
             int indexOffset = 0;
@@ -614,7 +759,59 @@ namespace IsleForge.Pages
             return combined;
         }
 
-        private void ApplyTopDownUV(MeshGeometry3D mesh, double scale = 0.1)
+        private MeshGeometry3D CombineMeshes(Dictionary<string, MeshGeometry3D> meshes)
+        {
+            var combined = new MeshGeometry3D();
+            var vertexMap = new Dictionary<(Point3D, Point), int>(); // (position, uv) → index
+            int nextIndex = 0;
+
+            foreach (var mesh in meshes.Values)
+            {
+                for (int i = 0; i < mesh.Positions.Count; i++)
+                {
+                    Point3D pos = mesh.Positions[i];
+                    Point uv = mesh.TextureCoordinates.Count > i ? mesh.TextureCoordinates[i] : new Point(0, 0);
+
+                    var key = (pos, uv);
+                    if (!vertexMap.TryGetValue(key, out int index))
+                    {
+                        index = nextIndex++;
+                        vertexMap[key] = index;
+                        combined.Positions.Add(pos);
+                        combined.TextureCoordinates.Add(uv);
+                    }
+                }
+            }
+
+            // Rebuild triangles using fused indices
+            foreach (var mesh in meshes.Values)
+            {
+                for (int i = 0; i < mesh.TriangleIndices.Count; i += 3)
+                {
+                    int i0 = mesh.TriangleIndices[i];
+                    int i1 = mesh.TriangleIndices[i + 1];
+                    int i2 = mesh.TriangleIndices[i + 2];
+
+                    var p0 = mesh.Positions[i0];
+                    var p1 = mesh.Positions[i1];
+                    var p2 = mesh.Positions[i2];
+
+                    var uv0 = mesh.TextureCoordinates.Count > i0 ? mesh.TextureCoordinates[i0] : new Point(0, 0);
+                    var uv1 = mesh.TextureCoordinates.Count > i1 ? mesh.TextureCoordinates[i1] : new Point(0, 0);
+                    var uv2 = mesh.TextureCoordinates.Count > i2 ? mesh.TextureCoordinates[i2] : new Point(0, 0);
+
+                    combined.TriangleIndices.Add(vertexMap[(p0, uv0)]);
+                    combined.TriangleIndices.Add(vertexMap[(p1, uv1)]);
+                    combined.TriangleIndices.Add(vertexMap[(p2, uv2)]);
+                }
+            }
+
+            Debug.WriteLine($"[CombineMeshes] Final vertex count: {combined.Positions.Count}");
+            return combined;
+        }
+
+
+        private void ApplyTopDownUV2(MeshGeometry3D mesh, double scale = 0.1)
         {
             var coords = new PointCollection();
 
@@ -623,6 +820,29 @@ namespace IsleForge.Pages
 
             mesh.TextureCoordinates = coords;
         }
+
+        private void ApplyTopDownUV(MeshGeometry3D mesh, double scale = 0.1)
+        {
+            double minX = mesh.Positions.Min(p => p.X);
+            double maxX = mesh.Positions.Max(p => p.X);
+            double minZ = mesh.Positions.Min(p => p.Z);
+            double maxZ = mesh.Positions.Max(p => p.Z);
+
+            double rangeX = maxX - minX;
+            double rangeZ = maxZ - minZ;
+
+            var coords = new PointCollection();
+
+            foreach (var pos in mesh.Positions)
+            {
+                double u = (pos.X - minX) / rangeX;
+                double v = (pos.Z - minZ) / rangeZ;
+                coords.Add(new Point(u, v));
+            }
+
+            mesh.TextureCoordinates = coords;
+        }
+
 
         private WriteableBitmap GenerateFinalTextureFromLabelGrid(
     string[,] labelGrid,
@@ -664,8 +884,11 @@ namespace IsleForge.Pages
                     int srcW = sourceTex.PixelWidth;
                     int srcH = sourceTex.PixelHeight;
 
-                    double u = (x * tileScale) % 1.0;
-                    double v = (y * tileScale) % 1.0;
+
+                    double u = ((double)x / width) * tileScale;
+                    double v = ((double)y / height) * tileScale;
+                    //u = u % 1.0;
+                    //v = v % 1.0;
 
                     int tx = (int)(u * srcW) % srcW;
                     int ty = (int)(v * srcH) % srcH;

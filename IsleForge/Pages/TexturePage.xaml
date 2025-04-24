@@ -21,6 +21,20 @@
                 <Button Content="Upload Texture" Margin="0,15,0,0" Click="UploadTexture_Click"/>
                 <Button Content="Reset Texture" Margin="0,15,0,0" Click="ResetTexture_Click"/>
 
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <TextBlock Text="Texture Tiling:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <TextBlock Tag="TextureSizeLabel" Text="1"/>
+                </StackPanel>
+
+                <Slider Minimum="0.1"
+                    Maximum="100"
+                    Value="1"
+                    Tag="TextureSize"
+                    ValueChanged="TextureSizeSlider_ValueChanged"/>
+
+                <Button Content="Export Texture" Margin="0,25,0,0" Click="ExportTexture_Click"/>
+                <Button Content="Export Mesh" Margin="0,25,0,0" Click="ExportMesh_Click"/>
+
             </StackPanel>
         </local:BaseLayout.LeftContent>
 
