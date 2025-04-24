@@ -42,7 +42,7 @@ namespace IsleForge.Pages
         private const string DefaultSand = "SandAlbedo.png";
 
         private List<(double U, double V, string Label)> _collectedUVs = new();
-
+        string[,] labelGrid;
 
         public TexturePage()
         {
@@ -96,8 +96,15 @@ namespace IsleForge.Pages
 
             SaveBitmapToFile(debugTexture, "terrain-debug.png");
 
+            var finalTex = GenerateFinalTextureFromLabelGrid(
+                labelGrid,
+                grass, rock, sand,
+                1024, 1024,
+                tileScale: 0.05
+            );
 
-            var material = new DiffuseMaterial(new ImageBrush(debugTexture) { Stretch = Stretch.Fill });
+            //var material = new DiffuseMaterial(new ImageBrush(debugTexture) { Stretch = Stretch.Fill });
+            var material = new DiffuseMaterial(new ImageBrush(finalTex) { Stretch = Stretch.Fill });
 
             _modelGroup.Children.Clear();
 
@@ -394,6 +401,7 @@ namespace IsleForge.Pages
             var labelMap = new Dictionary<(int, int), string>();
             var usedLabels = new HashSet<string>();
             var labelPixelCounts = new Dictionary<string, int>();
+            labelGrid = new string[textureWidth, textureHeight];
 
             // Reproject UVs same as ApplyTextureCoordinates (X/Z scaled)
             var allUVs = new List<Point>();
@@ -478,8 +486,10 @@ namespace IsleForge.Pages
                     string label = labelMap.TryGetValue((x, y), out var lbl) ? lbl : "unknown";
 
                     var colorOpt = GetColorForLabel(label);
+
                     if (colorOpt is Color color)
                     {
+                        labelGrid[x, y] = GetTerrainTypeFromColor(color);
                         int idx = (y * textureWidth + x) * 4;
                         pixels[idx + 0] = color.B;
                         pixels[idx + 1] = color.G;
@@ -502,6 +512,13 @@ namespace IsleForge.Pages
             return wb;
         }
 
+        private string GetTerrainTypeFromColor(Color color)
+        {
+            if (color == Colors.ForestGreen) return "grass";
+            if (color == Colors.SandyBrown) return "sand";
+            if (color == Colors.Purple) return "rock";
+            return "rock"; // fallback
+        }
 
         private static readonly Dictionary<string, Color> LabelColors = new()
         {
@@ -606,6 +623,69 @@ namespace IsleForge.Pages
 
             mesh.TextureCoordinates = coords;
         }
+
+        private WriteableBitmap GenerateFinalTextureFromLabelGrid(
+    string[,] labelGrid,
+    BitmapSource grassTex,
+    BitmapSource rockTex,
+    BitmapSource sandTex,
+    int width,
+    int height,
+    double tileScale = 0.05)
+        {
+            var wb = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+            byte[] finalPixels = new byte[width * height * 4];
+
+            var texLookup = new Dictionary<string, BitmapSource>
+            {
+                ["grass"] = grassTex,
+                ["rock"] = rockTex,
+                ["sand"] = sandTex
+            };
+
+            int tileWidth = (int)(1.0 / tileScale);
+
+            foreach (var kvp in texLookup)
+            {
+                if (kvp.Value.Format != PixelFormats.Bgra32)
+                    throw new InvalidOperationException($"Texture for {kvp.Key} must be Bgra32.");
+            }
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    string type = labelGrid[x, y];
+                    if (string.IsNullOrEmpty(type))
+                        type = "rock";
+                    if (!texLookup.TryGetValue(type, out var sourceTex))
+                        sourceTex = rockTex; // fallback
+
+                    int srcW = sourceTex.PixelWidth;
+                    int srcH = sourceTex.PixelHeight;
+
+                    double u = (x * tileScale) % 1.0;
+                    double v = (y * tileScale) % 1.0;
+
+                    int tx = (int)(u * srcW) % srcW;
+                    int ty = (int)(v * srcH) % srcH;
+
+                    byte[] pixelData = new byte[4];
+                    var rect = new Int32Rect(tx, ty, 1, 1);
+                    sourceTex.CopyPixels(rect, pixelData, 4, 0);
+
+                    int idx = (y * width + x) * 4;
+                    finalPixels[idx + 0] = pixelData[0];
+                    finalPixels[idx + 1] = pixelData[1];
+                    finalPixels[idx + 2] = pixelData[2];
+                    finalPixels[idx + 3] = 255;
+                }
+            }
+
+            wb.WritePixels(new Int32Rect(0, 0, width, height), finalPixels, width * 4, 0);
+            return wb;
+        }
+
 
 
         #endregion
