@@ -17,13 +17,8 @@ using System.Windows.Navigation;
 using System.Windows.Shapes;
 using IsleForge.Helpers;
 using SharpDX;
-using TriangleNet.Meshing;
 using Color = System.Windows.Media.Color;
 using Point = System.Windows.Point;
-using TriangleNet.Geometry;
-using TriangleNet.Meshing;
-using SharpDX.DXGI;
-using Polygon = TriangleNet.Geometry.Polygon;
 
 namespace IsleForge.Pages
 {
@@ -101,9 +96,12 @@ namespace IsleForge.Pages
 
         private void ExportMesh_Click(object sender, RoutedEventArgs e)
         {
-            string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "heightmapGroup.obj");
+            // string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "heightmapGroup.obj");
 
-            ExportModelGroupToObj(_modelGroup, path);
+            //ExportModelGroupToObj(_modelGroup, path);
+            string folderPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MeshExports");
+            ExportEachMeshToObj(_modelGroup, folderPath);
+
             return;
 
         }
@@ -166,6 +164,23 @@ namespace IsleForge.Pages
             return model.GetValue(FrameworkElement.TagProperty) as string ?? "unknown";
         }
 
+        private string GetLabelFromGeometryModelCliff(GeometryModel3D model)
+        {
+            string label = model.GetValue(FrameworkElement.TagProperty) as string;
+
+            return label switch
+            {
+                "Mid" => "Mid",
+                "ramp" => "ramp",
+                "Base" => "Base",
+                "Top" => "Top",
+                "beach" => "beach",
+                null or "" => "cliff",
+                _ => "cliff" // default fallback
+            };
+        }
+
+
         #endregion
 
         #region noise application
@@ -206,6 +221,25 @@ namespace IsleForge.Pages
         {
             var meshes = CreateMeshesByLabel(labeledHeightMap);
             _modelGroup.Children.Clear();
+
+            var subdividedMeshes = new Dictionary<string, MeshGeometry3D>();
+
+            foreach (var kvp in meshes)
+            {
+                string label = kvp.Key;
+                var mesh = kvp.Value;
+
+                if (label.StartsWith("seam_"))
+                {
+                    subdividedMeshes[label] = SubdivideMesh(mesh);
+                }
+                else
+                {
+                    subdividedMeshes[label] = mesh;
+                }
+            }
+
+            meshes = subdividedMeshes;
 
             foreach (var kvp in meshes)
             {
@@ -414,36 +448,7 @@ namespace IsleForge.Pages
 
 
             //trying a new extra step
-            // return finalMeshes; //old working one
-            var result = finalMeshes;
-
-            var combineMesh = CombineMesh(finalMeshes);
-            //var remeshMesh = ApplyQuadriflowRemesh(combineMesh);
-            
-
-            var returnMesh = WrapSingleMesh(combineMesh);
-            //var returnMesh = WrapSingleMesh(remeshed);
-
-            return returnMesh;
-
-            /*
-            // Generate a new triangulated mesh from the full point cloud
-            var pointCloud = new HashSet<Point3D>();
-            foreach (var mesh in finalMeshes.Values)
-            {
-                foreach (var pt in mesh.Positions)
-                    pointCloud.Add(pt);
-            }
-
-            // Remesh the collected point cloud into a single mesh
-            var triangulatedMesh = TriangulatePointCloud(pointCloud);
-
-            return new Dictionary<string, MeshGeometry3D>
-            {
-                { "Remeshed", triangulatedMesh }
-            };
-            */
-
+            return finalMeshes; //old working one            
         }
 
         private Dictionary<string, MeshGeometry3D> WrapSingleMesh(MeshGeometry3D mesh, string label = "default")
@@ -499,24 +504,6 @@ namespace IsleForge.Pages
             return builder.Mesh;
         }
 
-
-        private MeshGeometry3D CombineMesh2(Dictionary<string, MeshGeometry3D> input)
-        {
-            var builder = new MeshBuilder();
-            foreach (var mesh in input.Values)
-            {
-                for (int i = 0; i < mesh.TriangleIndices.Count; i += 3)
-                {
-                    var a = mesh.Positions[mesh.TriangleIndices[i]];
-                    var b = mesh.Positions[mesh.TriangleIndices[i + 1]];
-                    var c = mesh.Positions[mesh.TriangleIndices[i + 2]];
-                    builder.AddTriangle(a, b, c);
-                }
-            }
-            return builder.Mesh;
-        }
-
-  
         private Dictionary<string, MeshGeometry3D> CreateMeshesByLabelFirstGood(LabeledValue[,] map)
         {
             int width = map.GetLength(0);
@@ -836,6 +823,72 @@ namespace IsleForge.Pages
             MessageBox.Show("OBJ exported to:\n" + filePath);
         }
 
+        private void ExportEachMeshToObj(Model3DGroup modelGroup, string outputDirectory)
+        {
+            Directory.CreateDirectory(outputDirectory); // Make sure output dir exists
+
+            for (int modelIndex = 0; modelIndex < modelGroup.Children.Count; modelIndex++)
+            {
+                if (!(modelGroup.Children[modelIndex] is GeometryModel3D geom))
+                    continue;
+
+                if (!(geom.Geometry is MeshGeometry3D mesh))
+                    continue;
+
+                // Try to get label
+                string label = geom.GetValue(FrameworkElement.TagProperty) as string ?? $"mesh_{modelIndex}";
+                string safeLabel = string.Concat(label.Where(c => char.IsLetterOrDigit(c) || c == '_'));
+                string filePath = System.IO.Path.Combine(outputDirectory, $"{safeLabel}.obj");
+
+                using (StreamWriter writer = new StreamWriter(filePath))
+                {
+                    writer.WriteLine($"# Exported OBJ for mesh: {label}");
+
+                    int vertexOffset = 1;
+
+                    // Write vertices
+                    foreach (var pos in mesh.Positions)
+                        writer.WriteLine($"v {pos.X:0.######} {pos.Y:0.######} {pos.Z:0.######}");
+
+                    bool hasNormals = mesh.Normals != null && mesh.Normals.Count == mesh.Positions.Count;
+                    if (hasNormals)
+                    {
+                        foreach (var n in mesh.Normals)
+                            writer.WriteLine($"vn {n.X:0.######} {n.Y:0.######} {n.Z:0.######}");
+                    }
+
+                    bool hasUVs = mesh.TextureCoordinates != null && mesh.TextureCoordinates.Count == mesh.Positions.Count;
+                    if (hasUVs)
+                    {
+                        foreach (var uv in mesh.TextureCoordinates)
+                            writer.WriteLine($"vt {uv.X:0.######} {uv.Y:0.######}");
+                    }
+
+                    // Write faces
+                    for (int i = 0; i < mesh.TriangleIndices.Count; i += 3)
+                    {
+                        int i0 = mesh.TriangleIndices[i] + vertexOffset;
+                        int i1 = mesh.TriangleIndices[i + 1] + vertexOffset;
+                        int i2 = mesh.TriangleIndices[i + 2] + vertexOffset;
+
+                        if (hasNormals && hasUVs)
+                            writer.WriteLine($"f {i0}/{i0}/{i0} {i1}/{i1}/{i1} {i2}/{i2}/{i2}");
+                        else if (hasUVs)
+                            writer.WriteLine($"f {i0}/{i0} {i1}/{i1} {i2}/{i2}");
+                        else if (hasNormals)
+                            writer.WriteLine($"f {i0}//{i0} {i1}//{i1} {i2}//{i2}");
+                        else
+                            writer.WriteLine($"f {i0} {i1} {i2}");
+                    }
+                }
+
+                Debug.WriteLine($"Exported OBJ: {filePath}");
+            }
+
+            MessageBox.Show("All individual OBJ meshes exported.");
+        }
+
+
         #endregion
 
         #region viewing helpers
@@ -870,6 +923,70 @@ namespace IsleForge.Pages
 
         #endregion
 
+        #region subdivide small pieces
+        private MeshGeometry3D SubdivideMesh(MeshGeometry3D input)
+        {
+            var result = new MeshGeometry3D();
+            var midpointCache = new Dictionary<(int, int), int>();
+
+            int GetMidpoint(int i1, int i2)
+            {
+                var key = (Math.Min(i1, i2), Math.Max(i1, i2));
+                if (midpointCache.TryGetValue(key, out int index))
+                    return index;
+
+                var p1 = input.Positions[i1];
+                var p2 = input.Positions[i2];
+                var mid = new Point3D(
+                    (p1.X + p2.X) * 0.5,
+                    (p1.Y + p2.Y) * 0.5,
+                    (p1.Z + p2.Z) * 0.5
+                );
+
+                result.Positions.Add(mid);
+                index = result.Positions.Count - 1;
+                midpointCache[key] = index;
+                return index;
+            }
+
+            // Copy all input vertices
+            foreach (var p in input.Positions)
+                result.Positions.Add(p);
+
+            for (int i = 0; i < input.TriangleIndices.Count; i += 3)
+            {
+                int i0 = input.TriangleIndices[i];
+                int i1 = input.TriangleIndices[i + 1];
+                int i2 = input.TriangleIndices[i + 2];
+
+                int a = GetMidpoint(i0, i1);
+                int b = GetMidpoint(i1, i2);
+                int c = GetMidpoint(i2, i0);
+
+                // Create 4 subdivided triangles
+                result.TriangleIndices.Add(i0);
+                result.TriangleIndices.Add(a);
+                result.TriangleIndices.Add(c);
+
+                result.TriangleIndices.Add(i1);
+                result.TriangleIndices.Add(b);
+                result.TriangleIndices.Add(a);
+
+                result.TriangleIndices.Add(i2);
+                result.TriangleIndices.Add(c);
+                result.TriangleIndices.Add(b);
+
+                result.TriangleIndices.Add(a);
+                result.TriangleIndices.Add(b);
+                result.TriangleIndices.Add(c);
+            }
+
+            return result;
+        }
+
+
+        #endregion
+
         #region end buttons
 
         private void Back_Click(object sender, RoutedEventArgs e)
@@ -885,9 +1002,12 @@ namespace IsleForge.Pages
                 if (child is GeometryModel3D geom && geom.Geometry is MeshGeometry3D mesh)
                 {
                     string label = GetLabelFromGeometryModel(geom);
+                    Debug.WriteLine($"[EXPORT] Label: {label}");
                     finalMeshes[label] = mesh;
                 }
             }
+
+
 
             MeshDataStore.Meshes = finalMeshes;
             MeshDataStore.OriginalMeshPositions = originalMeshPositions;

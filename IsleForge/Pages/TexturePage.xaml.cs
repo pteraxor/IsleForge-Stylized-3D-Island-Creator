@@ -55,6 +55,18 @@ namespace IsleForge.Pages
             _meshes = MeshDataStore.Meshes;
             _originalPositions = MeshDataStore.OriginalMeshPositions;
 
+            foreach (var kvp in _meshes)
+            {
+                string label = kvp.Key;
+                var mesh = kvp.Value;
+                Debug.WriteLine($"[InitMesh] Label in _meshes: {label}");
+                //_modelGroup.Children.Add(new GeometryModel3D(mesh, material));
+                if (kvp.Key == "cliff")
+                {
+                    Debug.WriteLine($"[VertexCount] cliff mesh has {kvp.Value.Positions.Count} vertices.");
+                }
+            }
+
             _MapCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "MapCanvas");
 
             //load default textures
@@ -74,31 +86,7 @@ namespace IsleForge.Pages
 
 
             //this is the good thing
-
-            foreach (var kvp in _meshes)
-            {
-                string label = kvp.Key;
-                var mesh = kvp.Value;
-
-                // ApplyTextureCoordinates(mesh, 0.1); // UVs scaled for tiling
-                ApplyTextureCoordinatesLabel(mesh, 0.1, label);
-                Debug.WriteLine($"Label: {label}");
-
-               
-                // _modelGroup.Children.Add(model);
-            }
-
-
-            //this is the good thing's end
-            Debug.WriteLine($"Collected UV count: {_collectedUVs.Count}");
-            SaveUVDensityMap(_collectedUVs, 1024, 1024);
-
-
-            foreach (var uv in _collectedUVs.Take(5))
-            {
-                Debug.WriteLine($"UV: ({uv.U:F2}, {uv.V:F2}), Label: {uv.Label}");
-            }
-            //ApplyTextureCoordinatesLabel(mesh, 0.1, label); // UVs scaled for tiling
+          
 
             var grass = LoadBitmap("GrassAlbedo.png");
             var rock = LoadBitmap("RockAlbedo.png");
@@ -128,10 +116,13 @@ namespace IsleForge.Pages
             {
                 string label = kvp.Key;
                 var mesh = kvp.Value;
-
-                _modelGroup.Children.Add(new GeometryModel3D(mesh, material));
+                Debug.WriteLine($"[InitMesh] Label in _meshes: {label}");
+                //_modelGroup.Children.Add(new GeometryModel3D(mesh, material));
+                if (kvp.Key == "cliff")
+                {
+                    Debug.WriteLine($"[VertexCount] cliff mesh has {kvp.Value.Positions.Count} vertices.");
+                }
             }
-            DebugCollectedUVs(_collectedUVs);
 
             //redo mesh making
 
@@ -449,13 +440,15 @@ namespace IsleForge.Pages
         }
 
 
-        private WriteableBitmap GenerateDebugLabelTexture(
+        private WriteableBitmap GenerateDebugLabelTexture2pass(
     Dictionary<string, MeshGeometry3D> meshes,
     int textureWidth,
     int textureHeight)
         {
             var labelMap = new Dictionary<(int, int), string>();
             var allUVs = new List<Point>();
+            var usedLabels = new HashSet<string>();
+
 
             foreach (var mesh in meshes.Values)
             {
@@ -475,6 +468,8 @@ namespace IsleForge.Pages
             void PaintMesh(MeshGeometry3D mesh, string label, bool overwrite)
             {
                 string normalizedLabel = NormalizeLabel(label);
+                usedLabels.Add(normalizedLabel);
+
 
                 for (int i = 0; i < mesh.Positions.Count; i++)
                 {
@@ -525,11 +520,20 @@ namespace IsleForge.Pages
                 }
             }
 
+            /*
             Color GetColorForLabel(string label)
             {
                 return LabelColors.TryGetValue(label, out var color)
                     ? color
                     : Colors.Gray;
+            }
+            */
+            Color? GetColorForLabel(string label)
+            {
+                if (LabelColors.TryGetValue(label, out var color))
+                    return color;
+
+                return null; // explicitly skip unknown labels
             }
 
             var wb = new WriteableBitmap(textureWidth, textureHeight, 96, 96, PixelFormats.Bgra32, null);
@@ -540,6 +544,161 @@ namespace IsleForge.Pages
                 for (int x = 0; x < textureWidth; x++)
                 {
                     string label = labelMap.TryGetValue((x, y), out var lbl) ? lbl : "unknown";
+                    //Color color = GetColorForLabel(label);
+
+                    //int idx = (y * textureWidth + x) * 4;
+                    //pixels[idx + 0] = color.B;
+                    //pixels[idx + 1] = color.G;
+                    //pixels[idx + 2] = color.R;
+                    //pixels[idx + 3] = color.A;
+                    var colorOpt = GetColorForLabel(label);
+                    if (colorOpt is Color color)
+                    {
+                        int idx = (y * textureWidth + x) * 4;
+                        pixels[idx + 0] = color.B;
+                        pixels[idx + 1] = color.G;
+                        pixels[idx + 2] = color.R;
+                        pixels[idx + 3] = color.A;
+                    }
+                }
+            }
+
+            wb.WritePixels(new Int32Rect(0, 0, textureWidth, textureHeight), pixels, textureWidth * 4, 0);
+
+
+            Debug.WriteLine("--- Labels actually painted in GenerateDebugLabelTexture() ---");
+            foreach (var label in usedLabels.OrderBy(l => l))
+            {
+                Debug.WriteLine($"• {label}");
+            }
+            Debug.WriteLine("---------------------------------------------------------------");
+
+            return wb;
+        }
+
+        private WriteableBitmap GenerateDebugLabelTexture(
+    Dictionary<string, MeshGeometry3D> meshes,
+    int textureWidth,
+    int textureHeight)
+        {
+            var labelMap = new Dictionary<(int, int), string>();
+            var usedLabels = new HashSet<string>();
+            var labelPixelCounts = new Dictionary<string, int>();
+
+            // Reproject UVs same as ApplyTextureCoordinates (X/Z scaled)
+            var allUVs = new List<Point>();
+            foreach (var mesh in meshes.Values)
+            {
+                foreach (var pos in mesh.Positions)
+                {
+                    allUVs.Add(new Point(pos.X * 0.1, pos.Z * 0.1));
+                }
+            }
+
+            double minU = allUVs.Min(p => p.X);
+            double maxU = allUVs.Max(p => p.X);
+            double minV = allUVs.Min(p => p.Y);
+            double maxV = allUVs.Max(p => p.Y);
+            double rangeU = maxU - minU;
+            double rangeV = maxV - minV;
+
+            foreach (var kvp in meshes)
+            {
+                string label = kvp.Key;
+                var mesh = kvp.Value;
+                string normalizedLabel = NormalizeLabel(label);
+
+                for (int i = 0; i < mesh.Positions.Count; i++)
+                {
+                    var pos = mesh.Positions[i];
+
+                    double u = (pos.X * 0.1 - minU) / rangeU;
+                    double v = (pos.Z * 0.1 - minV) / rangeV;
+                    /*
+                    double u, v;
+                    if (normalizedLabel == "cliff")
+                    {
+                        // Project from the side (X/Y) to better expose vertical geometry
+                        u = (pos.X * 0.1 - minU) / rangeU;
+                        v = (pos.Y * 0.1 - minV) / rangeV;
+                    }
+                    else
+                    {
+                        // Default top-down projection
+                        u = (pos.X * 0.1 - minU) / rangeU;
+                        v = (pos.Z * 0.1 - minV) / rangeV;
+                    }*/
+
+                    int x = Math.Clamp((int)(u * textureWidth), 0, textureWidth - 1);
+                    int y = Math.Clamp((int)(v * textureHeight), 0, textureHeight - 1);
+
+                    
+                    usedLabels.Add(normalizedLabel);
+                    if (labelPixelCounts.ContainsKey(normalizedLabel))
+                        labelPixelCounts[normalizedLabel]++;
+                    else
+                        labelPixelCounts[normalizedLabel] = 1;
+
+
+                    // Paint a small square around the UV point to fill in more area
+                    //int radius = normalizedLabel == "cliff" ? 5 : 2;
+                    int radius = 2;
+                    for (int dy = -radius; dy <= radius; dy++)
+                    {
+                        for (int dx = -radius; dx <= radius; dx++)
+                        {
+                            int px = x + dx;
+                            int py = y + dy;
+
+                            if (px >= 0 && px < textureWidth && py >= 0 && py < textureHeight)
+                            {
+
+                                labelMap[(px, py)] = normalizedLabel;
+                            }
+                        }
+                    }
+
+
+                    //////
+
+                }
+            }
+
+            // Simple color map per label
+            //Color GetColorForLabel(string label)
+            //{
+            //    return LabelColors.TryGetValue(label, out var color)
+            //        ? color
+            //        : Colors.Gray;
+            //}
+            Color? GetColorForLabel(string label)
+            {
+                if (LabelColors.TryGetValue(label, out var color))
+                    return color;
+
+                return null; // explicitly skip unknown labels
+            }
+
+            var wb = new WriteableBitmap(textureWidth, textureHeight, 96, 96, PixelFormats.Bgra32, null);
+            byte[] pixels = new byte[textureWidth * textureHeight * 4];
+
+            for (int y = 0; y < textureHeight; y++)
+            {
+                for (int x = 0; x < textureWidth; x++)
+                {
+                    string label = labelMap.TryGetValue((x, y), out var lbl) ? lbl : "unknown";
+
+                    var colorOpt = GetColorForLabel(label);
+                    if (colorOpt is Color color)
+                    {
+                        int idx = (y * textureWidth + x) * 4;
+                        pixels[idx + 0] = color.B;
+                        pixels[idx + 1] = color.G;
+                        pixels[idx + 2] = color.R;
+                        pixels[idx + 3] = color.A;
+                    }
+
+                    /*
                     Color color = GetColorForLabel(label);
 
                     int idx = (y * textureWidth + x) * 4;
@@ -547,10 +706,19 @@ namespace IsleForge.Pages
                     pixels[idx + 1] = color.G;
                     pixels[idx + 2] = color.R;
                     pixels[idx + 3] = color.A;
+                    */
                 }
             }
 
             wb.WritePixels(new Int32Rect(0, 0, textureWidth, textureHeight), pixels, textureWidth * 4, 0);
+
+            Debug.WriteLine("--- Label pixel counts in GenerateDebugLabelTexture() ---");
+            foreach (var kvp in labelPixelCounts.OrderByDescending(kvp => kvp.Value))
+            {
+                Debug.WriteLine($"• {kvp.Key}: {kvp.Value} pixels");
+            }
+            Debug.WriteLine("----------------------------------------------------------");
+
             return wb;
         }
 
@@ -575,11 +743,13 @@ namespace IsleForge.Pages
 
         private static readonly Dictionary<string, Color> LabelColors = new()
         {
-            ["Mid"] = Colors.OliveDrab,
-            ["ramp"] = Colors.DodgerBlue,
-            ["Base"] = Colors.LightGreen,
+            ["Mid"] = Colors.ForestGreen,
+            ["ramp"] = Colors.ForestGreen,
+            ["Base"] = Colors.ForestGreen,
             ["Top"] = Colors.ForestGreen,
             ["beach"] = Colors.SandyBrown,
+            ["cliff"] = Colors.Purple,
+            ["None"] = Colors.Purple,
 
             /*
             ["seam_Mid_None"] = Colors.Gray,
@@ -609,14 +779,14 @@ namespace IsleForge.Pages
 
 
 
-        private string NormalizeLabel(string rawLabel)
+        private string NormalizeLabel2(string rawLabel)
         {
             if (rawLabel.StartsWith("seam_"))
             {
                 var parts = rawLabel.Substring(5).Split('_');
 
                 // If one part is None, treat the seam as a cliff (None often means vertical edge)
-                if (parts.Contains("None"))
+                if (parts.Contains("None") || parts.Contains("cliff"))
                     return "cliff";
 
                 // Or fall back to most common terrain tag
@@ -631,6 +801,24 @@ namespace IsleForge.Pages
 
             return rawLabel;
         }
+
+        private string NormalizeLabel(string rawLabel)
+        {
+            if (string.IsNullOrWhiteSpace(rawLabel))
+                return "cliff";
+
+            if (rawLabel.StartsWith("seam_"))
+            {
+               
+                return "cliff"; // fallback if unknown seam
+            }
+
+            if (new[] { "Mid", "ramp", "Base", "Top", "beach" }.Contains(rawLabel))
+                return rawLabel;
+
+            return "cliff"; // catch-all fallback
+        }
+
 
 
         private void DebugCollectedUVs(List<(double U, double V, string Label)> uvs)
