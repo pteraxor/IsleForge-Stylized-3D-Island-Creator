@@ -97,6 +97,8 @@ namespace IsleForge.Pages
 
             //this is the good thing's end
             Debug.WriteLine($"Collected UV count: {_collectedUVs.Count}");
+            SaveUVDensityMap(_collectedUVs, 1024, 1024);
+
 
             foreach (var uv in _collectedUVs.Take(5))
             {
@@ -134,6 +136,17 @@ namespace IsleForge.Pages
                 _modelGroup.Children.Add(new GeometryModel3D(mesh, material));
             }
             DebugCollectedUVs(_collectedUVs);
+
+            //redo mesh making
+
+            var combinedMesh = CombineMeshes(_meshes);
+            ApplyTopDownUV(combinedMesh, 0.1);
+
+
+            _modelGroup.Children.Clear();
+            _modelGroup.Children.Add(new GeometryModel3D(combinedMesh, material));
+
+
 
             SetCameraToMesh();
         }
@@ -651,16 +664,12 @@ namespace IsleForge.Pages
             }
 
             // Simple color map per label
-            Color GetColorForLabel(string label) => label switch
+            Color GetColorForLabel(string label)
             {
-                "cliff" => Colors.Gray,
-                "beach" => Colors.SandyBrown,
-                "Top" => Colors.Green,
-                "Mid" => Colors.LightGreen,
-                "Base" => Colors.ForestGreen,
-                "ramp" => Colors.Olive,
-                _ => Colors.Magenta // fallback for unknowns
-            };
+                return LabelColors.TryGetValue(label, out var color)
+                    ? color
+                    : Colors.Magenta;
+            }
 
             var wb = new WriteableBitmap(textureWidth, textureHeight, 96, 96, PixelFormats.Bgra32, null);
             byte[] pixels = new byte[textureWidth * textureHeight * 4];
@@ -685,26 +694,6 @@ namespace IsleForge.Pages
         }
 
 
-        private List<(double U, double V, string Label)> CollectTextureCoordinatesWithLabels(
-    Dictionary<string, MeshGeometry3D> meshes, double scale = 0.1)
-        {
-            var collected = new List<(double U, double V, string Label)>();
-
-            foreach (var kvp in meshes)
-            {
-                string label = kvp.Key;
-                var mesh = kvp.Value;
-
-                foreach (var pos in mesh.Positions)
-                {
-                    double u = pos.X * scale;
-                    double v = pos.Z * scale;
-                    collected.Add((u, v, label));
-                }
-            }
-
-            return collected;
-        }
 
         private void ApplyTextureCoordinatesLabel(MeshGeometry3D mesh, double scale, string label)
         {
@@ -726,90 +715,37 @@ namespace IsleForge.Pages
 
         private static readonly Dictionary<string, Color> LabelColors = new()
         {
-            ["Mid"] = Colors.LightGreen,
-            ["ramp"] = Colors.Olive,
-            ["Base"] = Colors.ForestGreen,
+            ["Mid"] = Colors.Green,
+            ["ramp"] = Colors.Green,
+            ["Base"] = Colors.Green,
             ["Top"] = Colors.Green,
             ["beach"] = Colors.SandyBrown,
 
-            ["seam_Mid_None"] = Colors.LightSeaGreen,
-            ["seam_Base_Mid"] = Colors.Teal,
-            ["seam_Base_Mid_None"] = Colors.DarkSlateBlue,
-            ["seam_Base_None"] = Colors.DarkCyan,
-            ["seam_Mid_ramp"] = Colors.Orange,
-            ["seam_Mid_ramp_Top"] = Colors.DarkOrange,
-            ["seam_Mid_Top"] = Colors.YellowGreen,
-            ["seam_ramp_Top"] = Colors.OrangeRed,
-            ["seam_Base_Mid_Top"] = Colors.SteelBlue,
-            ["seam_Base_Top"] = Colors.SeaGreen,
-            ["seam_None_Top"] = Colors.DarkKhaki,
-            ["seam_Base_None_Top"] = Colors.IndianRed,
-            ["seam_Mid_None_ramp"] = Colors.Peru,
-            ["seam_None_ramp"] = Colors.MediumVioletRed,
-            ["seam_Base_ramp"] = Colors.Brown,
-            ["seam_Base_ramp_Top"] = Colors.Maroon,
-            ["seam_Base_Mid_ramp"] = Colors.SlateBlue,
-            ["seam_Base_None_ramp"] = Colors.Sienna,
-            ["seam_Base_beach"] = Colors.PaleGoldenrod,
-            ["seam_beach_None"] = Colors.PeachPuff,
-            ["seam_Base_beach_None"] = Colors.MistyRose
+            ["seam_Mid_None"] = Colors.Green,
+            ["seam_Base_Mid"] = Colors.Green,
+            ["seam_Base_Mid_None"] = Colors.Green,
+            ["seam_Base_None"] = Colors.Green,
+            ["seam_Mid_ramp"] = Colors.Green,
+            ["seam_Mid_ramp_Top"] = Colors.Green,
+            ["seam_Mid_Top"] = Colors.Green,
+            ["seam_ramp_Top"] = Colors.Green,
+            ["seam_Base_Mid_Top"] = Colors.Green,
+            ["seam_Base_Top"] = Colors.Green,
+            ["seam_None_Top"] = Colors.Green,
+            ["seam_Base_None_Top"] = Colors.Green,
+            ["seam_Mid_None_ramp"] = Colors.Green,
+            ["seam_None_ramp"] = Colors.Green,
+            ["seam_Base_ramp"] = Colors.Green,
+            ["seam_Base_ramp_Top"] = Colors.Green,
+            ["seam_Base_Mid_ramp"] = Colors.Green,
+            ["seam_Base_None_ramp"] = Colors.Green,
+            ["seam_Base_beach"] = Colors.SandyBrown,
+            ["seam_beach_None"] = Colors.SandyBrown,
+            ["seam_Base_beach_None"] = Colors.SandyBrown
         };
 
 
-        private WriteableBitmap PaintLabelsToBitmapugg(
-    List<(double U, double V, string Label)> uvs,
-    int width,
-    int height)
-        {
-            double minU = uvs.Min(p => p.U);
-            double maxU = uvs.Max(p => p.U);
-            double minV = uvs.Min(p => p.V);
-            double maxV = uvs.Max(p => p.V);
-            double rangeU = maxU - minU;
-            double rangeV = maxV - minV;
 
-            var labelMap = new Dictionary<(int x, int y), string>();
-
-            foreach (var (U, V, Label) in uvs)
-            {
-                double normU = (U - minU) / rangeU;
-                double normV = (V - minV) / rangeV;
-
-                int x = Math.Clamp((int)(normU * width), 0, width - 1);
-                int y = Math.Clamp((int)(normV * height), 0, height - 1);
-
-                labelMap[(x, y)] = Label;
-            }
-
-            var wb = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
-            byte[] pixels = new byte[width * height * 4];
-
-            foreach (var kvp in labelMap)
-            {
-                var (x, y) = kvp.Key;
-                var label = kvp.Value;
-
-                Color color = label switch
-                {
-                    "cliff" => Colors.Gray,
-                    "beach" => Colors.SandyBrown,
-                    "Top" => Colors.Green,
-                    "Mid" => Colors.LightGreen,
-                    "Base" => Colors.ForestGreen,
-                    "ramp" => Colors.Olive,
-                    _ => Colors.Magenta
-                };
-
-                int idx = (y * width + x) * 4;
-                pixels[idx + 0] = color.B;
-                pixels[idx + 1] = color.G;
-                pixels[idx + 2] = color.R;
-                pixels[idx + 3] = color.A;
-            }
-
-            wb.WritePixels(new Int32Rect(0, 0, width, height), pixels, width * 4, 0);
-            return wb;
-        }
 
         private string NormalizeLabel(string raw)
         {
@@ -883,7 +819,62 @@ namespace IsleForge.Pages
             Debug.WriteLine($"Saved debug texture to: {path}");
         }
 
+        private void SaveUVDensityMap(List<(double U, double V, string Label)> uvs, int width, int height)
+        {
+            double minU = uvs.Min(p => p.U);
+            double maxU = uvs.Max(p => p.U);
+            double minV = uvs.Min(p => p.V);
+            double maxV = uvs.Max(p => p.V);
+            double rangeU = maxU - minU;
+            double rangeV = maxV - minV;
 
+            byte[] pixels = new byte[width * height * 4];
+
+            foreach (var (U, V, _) in uvs)
+            {
+                int x = Math.Clamp((int)(((U - minU) / rangeU) * width), 0, width - 1);
+                int y = Math.Clamp((int)(((V - minV) / rangeV) * height), 0, height - 1);
+
+                int idx = (y * width + x) * 4;
+                pixels[idx + 0] = 255; // B
+                pixels[idx + 1] = 255; // G
+                pixels[idx + 2] = 255; // R
+                pixels[idx + 3] = 255; // A
+            }
+
+            var wb = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+            wb.WritePixels(new Int32Rect(0, 0, width, height), pixels, width * 4, 0);
+            SaveBitmapToFile(wb, "uv-density-map.png");
+        }
+
+        private MeshGeometry3D CombineMeshes(Dictionary<string, MeshGeometry3D> meshes)
+        {
+            var combined = new MeshGeometry3D();
+            int indexOffset = 0;
+
+            foreach (var mesh in meshes.Values)
+            {
+                foreach (var pos in mesh.Positions)
+                    combined.Positions.Add(pos);
+
+                foreach (var index in mesh.TriangleIndices)
+                    combined.TriangleIndices.Add(index + indexOffset);
+
+                indexOffset += mesh.Positions.Count;
+            }
+
+            return combined;
+        }
+
+        private void ApplyTopDownUV(MeshGeometry3D mesh, double scale = 0.1)
+        {
+            var coords = new PointCollection();
+
+            foreach (var pos in mesh.Positions)
+                coords.Add(new Point(pos.X * scale, pos.Z * scale));
+
+            mesh.TextureCoordinates = coords;
+        }
 
 
         #endregion
