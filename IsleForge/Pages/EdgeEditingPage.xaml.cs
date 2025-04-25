@@ -15,6 +15,7 @@ using System.Windows.Navigation;
 using System.Windows.Shapes;
 using IsleForge.DrawingTools;
 using IsleForge.Helpers;
+using IsleForge.PageStates;
 
 namespace IsleForge.Pages
 {
@@ -85,25 +86,78 @@ namespace IsleForge.Pages
 
                 _baseCanvas.Children.Add(image);
 
-                if (_baseLayer != null)
+                if (PageStateStore.EdgeEditingState != null)
                 {
-                    _editLayer = new WriteableBitmap(
-                        _baseLayer.PixelWidth,
-                        _baseLayer.PixelHeight,
-                        96, 96,
-                        PixelFormats.Bgra32,
-                        null);
+                    RestorePageFromStoredState(); //
                 }
-
-                Debug.WriteLine("BaseLayer successfully added to canvas.");
+                else
+                {
+                    InitEditLayer(); // create blank editLayer
+                    ProcessEdgesAsync(); // auto-process edges
+                }
             }
 
-            ProcessEdgesAsync(); //at the end, we can do this
+        }
 
+        #region page state management
+
+        private void RestorePageFromStoredState()
+        {
+            var state = PageStateStore.EdgeEditingState;
+
+            _editLayer = state.EditLayer.Clone();
+            _undoStack = new Stack<WriteableBitmap>(state.UndoStack.Reverse());
+            _redoStack = new Stack<WriteableBitmap>(state.RedoStack.Reverse());
+            _drawingToolSize = state.DrawingToolSize;
+            _currentEdgeStyle = state.CurrentEdgeStyle;
+            _drawingMode = state.DrawingMode;
+            DetectedEdges = new HashSet<Point>(state.DetectedEdges);
+            EdgeChangesMade = state.EdgeChangesMade;
+
+            CANDRAW = true; // Re-enable drawing
+            _drawingMask = CreateEdgeMask(); // recreate mask
+            SetDrawingTool();
+
+            RefreshCanvas(); // Show everything again
+            UpdateUndoRedoButtons();
+
+            Debug.WriteLine("Restored EdgeEditingPage state.");
+        }
+
+        private void SavePageStateBeforeLeaving()
+        {
+            PageStateStore.EdgeEditingState = new EdgeEditingPageState
+            {
+                EditLayer = _editLayer.Clone(),
+                UndoStack = new Stack<WriteableBitmap>(_undoStack.Reverse()),
+                RedoStack = new Stack<WriteableBitmap>(_redoStack.Reverse()),
+                DrawingToolSize = _drawingToolSize,
+                CurrentEdgeStyle = _currentEdgeStyle,
+                DrawingMode = _drawingMode,
+                DetectedEdges = new HashSet<Point>(DetectedEdges),
+                EdgeChangesMade = EdgeChangesMade
+            };
+        }
+
+
+        #endregion
+
+        private void InitEditLayer()
+        {
+            if (_baseLayer != null)
+            {
+                _editLayer = new WriteableBitmap(
+                    _baseLayer.PixelWidth,
+                    _baseLayer.PixelHeight,
+                    96, 96,
+                    PixelFormats.Bgra32,
+                    null);
+            }
         }
 
         #region button behavior
 
+        //this one exists for testing, to use it as a button
         private void ProcessMap_Click(object sender, RoutedEventArgs e)
         {
             ProcessEdgesAsync();
@@ -660,7 +714,9 @@ namespace IsleForge.Pages
             {
                 return; // User said NO — cancel
             }
-            //this.NavigationService?.Navigate();
+
+            PageStateStore.EdgeEditingState = null; //clear this before going back
+
             if (this.NavigationService.CanGoBack)
                 this.NavigationService.GoBack();
 
@@ -686,6 +742,9 @@ namespace IsleForge.Pages
             }
 
             ProcessMapForHeightMap();
+
+            SavePageStateBeforeLeaving();
+
             this.NavigationService?.Navigate(new HeightMapPage());
 
         }
