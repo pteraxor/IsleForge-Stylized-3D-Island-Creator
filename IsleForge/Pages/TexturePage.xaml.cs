@@ -44,6 +44,8 @@ namespace IsleForge.Pages
         private MeshGeometry3D combinedMesh;
         private WriteableBitmap builtTexture;
 
+        private Point3D cameraRecenterOffset;
+
         private const string DefaultGrass = "GrassAlbedo.png";
         private const string DefaultRock = "RockAlbedo.png";
         private const string DefaultSand = "SandAlbedo.png";
@@ -118,7 +120,13 @@ namespace IsleForge.Pages
             //redo mesh making
 
             combinedMesh = CombineMeshes(_meshes);
+            Point3D desiredCenter = MeshDataStore.MeshCalculatedCenter;
+            MeshGeometry3D centeredMesh = CenterMeshToPoint(combinedMesh, desiredCenter);
+
+            combinedMesh = centeredMesh;
+
             ApplyTopDownUV(combinedMesh, 0.1);
+
 
 
             _modelGroup.Children.Clear();
@@ -184,35 +192,7 @@ namespace IsleForge.Pages
         }
 
 
-        private void UploadTextureForTypeOld(string type)
-        {
-            var openFileDialog = new Microsoft.Win32.OpenFileDialog
-            {
-                Filter = "Image Files|*.png;*.jpg;*.jpeg;*.bmp",
-                Title = $"Select {type} Texture"
-            };
 
-            if (openFileDialog.ShowDialog() == true)
-            {
-                var brush = LoadTilingBrushFromFile(openFileDialog.FileName);
-
-                switch (type.ToLower())
-                {
-                    case "grass":
-                        _grassBrush = brush;
-                        break;
-                    case "sand":
-                        _sandBrush = brush;
-                        break;
-                    case "rock":
-                        _rockBrush = brush;
-                        break;
-                }
-
-                //RetextureScene();
-                GoodRetexture();
-            }
-        }
 
 
         private void ResetTexture_Click(object sender, RoutedEventArgs e)
@@ -451,9 +431,16 @@ namespace IsleForge.Pages
 
         private void SetCameraToMesh()
         {
+
+            var recalcCenterCamera = new Point3D(
+                    MeshDataStore.CameraPosition.X - MeshDataStore.MeshCalculatedCenter.X,
+                    MeshDataStore.CameraPosition.Y,
+                    MeshDataStore.CameraPosition.Z - MeshDataStore.MeshCalculatedCenter.Z
+                );
+
             var camera = new PerspectiveCamera
             {
-                Position = MeshDataStore.CameraPosition,
+                Position = recalcCenterCamera,
                 LookDirection = MeshDataStore.CameraLookDirection,
                 UpDirection = MeshDataStore.CameraUpDirection,
                 FieldOfView = 60
@@ -909,6 +896,60 @@ namespace IsleForge.Pages
             return wb;
         }
 
+        private MeshGeometry3D CenterMeshToPoint(MeshGeometry3D mesh, Point3D targetCenter)
+        {
+            var recenteredMesh = new MeshGeometry3D();
+
+            // Shift every point relative to the target center
+            foreach (var point in mesh.Positions)
+            {
+                var newPoint = new Point3D(
+                    point.X - targetCenter.X,
+                    point.Y,
+                    point.Z - targetCenter.Z
+                );
+
+                recenteredMesh.Positions.Add(newPoint);
+            }
+
+            // Copy triangle indices directly
+            foreach (var index in mesh.TriangleIndices)
+            {
+                recenteredMesh.TriangleIndices.Add(index);
+            }
+
+            return recenteredMesh;
+        }
+
+
+        private MeshGeometry3D CenterMeshToPoint2(MeshGeometry3D mesh, Point3D newCenter)
+        {
+            var centeredMesh = new MeshGeometry3D();
+
+            // Calculate current center
+            Point3D currentCenter = new Point3D(
+                mesh.Positions.Average(p => p.X),
+                mesh.Positions.Average(p => p.Y),
+                mesh.Positions.Average(p => p.Z)
+            );
+
+            // Calculate offset
+            Vector3D offset = newCenter - currentCenter;
+
+            // Shift each position
+            foreach (var pt in mesh.Positions)
+            {
+                centeredMesh.Positions.Add(new Point3D(pt.X + offset.X, pt.Y + offset.Y, pt.Z + offset.Z));
+            }
+
+            // Copy triangle indices
+            foreach (var index in mesh.TriangleIndices)
+            {
+                centeredMesh.TriangleIndices.Add(index);
+            }
+
+            return centeredMesh;
+        }
 
 
         #endregion

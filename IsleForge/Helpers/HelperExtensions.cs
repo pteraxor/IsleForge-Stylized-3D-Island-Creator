@@ -9,6 +9,21 @@ using System.Windows;
 
 namespace IsleForge.Helpers
 {
+    public class SimplePoint
+    {
+        public double X, Z;
+        public SimplePoint(double x, double z) { X = x; Z = z; }
+    }
+
+    public class SimpleTriangle
+    {
+        public SimplePoint A, B, C;
+        public SimpleTriangle(SimplePoint a, SimplePoint b, SimplePoint c)
+        {
+            A = a; B = b; C = c;
+        }
+    }
+
     public class HelperExtensions
     {
 

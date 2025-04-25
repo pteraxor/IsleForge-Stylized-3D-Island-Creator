@@ -42,6 +42,8 @@ namespace IsleForge.Helpers
 
         public static LabeledValue[,] AnnotatedHeightMap { get; set; }
         public static float MaxHeightShare { get; set; }
+        public static float MidHeightShare { get; set; }
+        public static float LowHeightShare { get; set; }
 
     }
 }

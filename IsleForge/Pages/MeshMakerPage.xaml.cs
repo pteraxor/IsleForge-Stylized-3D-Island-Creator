@@ -266,6 +266,7 @@ namespace IsleForge.Pages
 
 
             Point3D center = GetMeshCenter(labeledHeightMap);
+            MeshDataStore.MeshCalculatedCenter = center; //storing this now
             var RadiusIdea = EstimateNonZeroRadius(labeledHeightMap, center);
             Debug.WriteLine($"Radius: {RadiusIdea}");
             SetCameraToMesh(_viewport3D, center, (float)RadiusIdea);

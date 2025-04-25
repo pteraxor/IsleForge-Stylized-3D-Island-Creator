@@ -42,6 +42,10 @@ namespace IsleForge.Pages
             string heightMapPath = @"../../../Resources/solvedMap.txt";
             string labelMapPath = @"../../../Resources/solvedMapWithLabels.txt";
 
+            MapDataStore.MaxHeightShare = 50;
+            MapDataStore.MidHeightShare = 40;
+            MapDataStore.LowHeightShare = 30;
+
             MapDataStore.FinalHeightMap = LoadFloatArrayFromFile(System.IO.Path.GetFullPath(heightMapPath));
             MapDataStore.AnnotatedHeightMap = LoadLabeledMapFromText(System.IO.Path.GetFullPath(labelMapPath));
 

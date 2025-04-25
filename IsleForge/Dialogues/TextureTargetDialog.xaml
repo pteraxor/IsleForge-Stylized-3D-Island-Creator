@@ -1,0 +1,22 @@
+﻿<Window x:Class="IsleForge.Dialogues.TextureTargetDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:IsleForge.Dialogues"
+        mc:Ignorable="d"
+        Title="Choose Texture Type" Height="150" Width="300"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        WindowStyle="ToolWindow">
+    <Grid>
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="10">
+            <TextBlock Text="Select which texture to upload:" Margin="0,0,0,10" FontWeight="Bold" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,5">
+                <Button Content="Grass" Width="70" Margin="5" Click="Grass_Click"/>
+                <Button Content="Sand" Width="70" Margin="5" Click="Sand_Click"/>
+                <Button Content="Rock" Width="70" Margin="5" Click="Rock_Click"/>
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</Window>

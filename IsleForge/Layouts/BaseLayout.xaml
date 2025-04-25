@@ -34,7 +34,7 @@
         </Border>
 
         <!-- Right Content -->
-        <Border Grid.Column="1" Margin="10">
+        <Border Grid.Column="1" Margin="0" Background="#202020">
             <ContentControl Content="{Binding RightContent, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
         </Border>
 

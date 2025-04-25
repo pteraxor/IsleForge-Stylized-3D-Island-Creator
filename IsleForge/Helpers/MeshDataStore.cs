@@ -12,6 +12,7 @@ namespace IsleForge.Helpers
         public static Dictionary<string, MeshGeometry3D> Meshes { get; set; }
         public static Dictionary<string, Point3DCollection> OriginalMeshPositions { get; set; }
 
+        public static Point3D MeshCalculatedCenter { get; set; }
         public static Point3D CameraPosition { get; set; }
         public static Vector3D CameraLookDirection { get; set; }
         public static Vector3D CameraUpDirection { get; set; }
