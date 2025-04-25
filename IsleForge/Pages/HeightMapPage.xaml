@@ -19,9 +19,34 @@
         <local:BaseLayout.LeftContent>
             <StackPanel>
 
-                <!--<Button Content="Process Map" Margin="0,15,0,0" Click="ProcessMap_Click"/>-->
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <!-- for labels -->
+                        <ColumnDefinition Width="*" />
+                        <!-- for textboxes -->
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-                
+                    <!-- Top Layer -->
+                    <TextBlock Text="Top Layer Height:" Grid.Row="0" Grid.Column="0" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                    <TextBox Tag="TopHeight" Text="32" Grid.Row="0" Grid.Column="1" Margin="0,0,0,0"/>
+
+                    <!-- Mid Layer -->
+                    <TextBlock Text="Mid Layer Height:" Grid.Row="1" Grid.Column="0" Margin="0,7,10,0" VerticalAlignment="Center"/>
+                    <TextBox Tag="MidHeight" Text="22" Grid.Row="1" Grid.Column="1" Margin="0,7,0,0"/>
+
+                    <!-- Base Layer -->
+                    <TextBlock Text="Base Layer Height:" Grid.Row="2" Grid.Column="0" Margin="0,7,10,0" VerticalAlignment="Center"/>
+                    <TextBox Tag="BaseHeight" Text="12" Grid.Row="2" Grid.Column="1" Margin="0,7,0,0"/>
+                </Grid>
+
+
+                <Button Content="Generate Height Map" Margin="0,15,0,0" Click="ProcessMap_Click"/>
 
             </StackPanel>
         </local:BaseLayout.LeftContent>
@@ -39,7 +64,7 @@
 
                     <Button Content="Back" Margin="5" Grid.Column="1" Click="Back_Click"/>
 
-                    <Button Content="Next" Margin="5" Grid.Column="2" Click="Next_Click"/>
+                    <Button Content="Next" Margin="5" Grid.Column="2" Click="Next_Click" Tag="NextBtn" IsEnabled="False"/>
                 </Grid>
             </DockPanel>
         </local:BaseLayout.FooterContent>

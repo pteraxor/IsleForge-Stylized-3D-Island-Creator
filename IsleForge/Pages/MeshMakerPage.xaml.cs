@@ -16,6 +16,7 @@ using System.Windows.Media.Media3D;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 using IsleForge.Helpers;
+using IsleForge.PageStates;
 using SharpDX;
 using Color = System.Windows.Media.Color;
 using Point = System.Windows.Point;
@@ -54,7 +55,7 @@ namespace IsleForge.Pages
             this.Loaded += MeshMakerPage_Loaded;
         }
 
-        private void MeshMakerPage_Loaded(object sender, RoutedEventArgs e)
+        private void MeshMakerPage_LoadedBeforeStates(object sender, RoutedEventArgs e)
         {
             _MapCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "MapCanvas");
 
@@ -67,6 +68,27 @@ namespace IsleForge.Pages
             LoadDataFromHeightMap();
 
         }
+
+        private void MeshMakerPage_Loaded(object sender, RoutedEventArgs e)
+        {
+            _MapCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "MapCanvas");
+
+            _viewport3D = FindVisualChild<Viewport3D>(this);
+            _modelGroup = FindSceneModelGroup(_viewport3D);
+
+            MIDVALUE = MapDataStore.MidHeightShare;
+            LOWVALUE = MapDataStore.LowHeightShare;
+
+            if (PageStateStore.MeshMakerState != null)
+            {
+                RestorePageFromStoredState();
+            }
+            else
+            {
+                LoadDataFromHeightMap();
+            }
+        }
+
 
         #region buttons
 
@@ -115,7 +137,8 @@ namespace IsleForge.Pages
             //heightMap = MapDataStore.FinalHeightMap;
             labeledHeightMap = MapDataStore.AnnotatedHeightMap;
             MAXVALUE = MapDataStore.MaxHeightShare;//GetMaxValue(labeledHeightMap);
-            Debug.WriteLine("Test data loaded.");
+            //Debug.WriteLine("Test data loaded.");
+            Debug.WriteLine($"MAXVALUE: {MAXVALUE}");
         }
 
         private float GetMaxValue(LabeledValue[,] data)
@@ -992,7 +1015,24 @@ namespace IsleForge.Pages
 
         private void Back_Click(object sender, RoutedEventArgs e)
         {
-            //might add the option to go back
+            var result = MessageBox.Show(
+                    $"Are you sure you want to return to the previous page? your progress will not be saved",
+                    "Return to previous page?",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+            if (result == MessageBoxResult.No)
+            {
+                return; // User said NO — cancel
+            }
+
+            PageStateStore.MeshMakerState = null;
+
+            if (this.NavigationService.CanGoBack)
+            {
+                this.NavigationService.GoBack();
+            }
+
         }
         private void Next_Click(object sender, RoutedEventArgs e)
         {
@@ -1023,8 +1063,85 @@ namespace IsleForge.Pages
                 MeshDataStore.CameraUpDirection = camera.UpDirection;
             }
 
+            SavePageStateBeforeLeaving();
+
             NavigationService.Navigate(new TexturePage());
         }
+
+        #endregion
+
+        #region page state management
+
+        private void SavePageStateBeforeLeaving()
+        {
+            var labelMeshes = new Dictionary<string, MeshGeometry3D>();
+
+            foreach (var child in _modelGroup.Children)
+            {
+                if (child is GeometryModel3D geom && geom.Geometry is MeshGeometry3D mesh)
+                {
+                    string label = geom.GetValue(FrameworkElement.TagProperty) as string ?? "unknown";
+                    labelMeshes[label] = mesh;
+                }
+            }
+
+            var camera = _viewport3D.Camera as PerspectiveCamera;
+
+            PageStateStore.MeshMakerState = new MeshMakerPageState
+            {
+                LabelMeshes = labelMeshes,
+                OriginalMeshPositions = new Dictionary<string, Point3DCollection>(originalMeshPositions),
+                LabeledHeightMap = (LabeledValue[,])labeledHeightMap.Clone(),
+                CameraPosition = camera?.Position ?? new Point3D(),
+                CameraLookDirection = camera?.LookDirection ?? new Vector3D(),
+                CameraUpDirection = camera?.UpDirection ?? new Vector3D(0, 1, 0),
+                MeshCreated = meshCreated
+            };
+        }
+
+
+        private void RestorePageFromStoredState()
+        {
+            var state = PageStateStore.MeshMakerState;
+
+            labeledHeightMap = (LabeledValue[,])state.LabeledHeightMap.Clone();
+            meshCreated = state.MeshCreated;
+
+            originalMeshPositions = new Dictionary<string, Point3DCollection>(state.OriginalMeshPositions);
+
+            _modelGroup.Children.Clear();
+
+            foreach (var kvp in state.LabelMeshes)
+            {
+                var mesh = kvp.Value;
+                var color = GetColorForLabel(kvp.Key);
+                var material = new DiffuseMaterial(new SolidColorBrush(color));
+                var model = new GeometryModel3D(mesh, material)
+                {
+                    BackMaterial = material
+                };
+
+                model.SetValue(FrameworkElement.TagProperty, kvp.Key);
+                _modelGroup.Children.Add(model);
+            }
+
+            if (state.CameraPosition != null)
+            {
+                var camera = _viewport3D.Camera as PerspectiveCamera;
+                if (camera != null)
+                {
+                    camera.Position = state.CameraPosition;
+                    camera.LookDirection = state.CameraLookDirection;
+                    camera.UpDirection = state.CameraUpDirection;
+                }
+            }
+
+            CreatedInitialMesh(); // Make sure buttons re-enable if mesh was made
+
+            Debug.WriteLine("Restored MeshMakerPage state.");
+        }
+
+
 
         #endregion
 

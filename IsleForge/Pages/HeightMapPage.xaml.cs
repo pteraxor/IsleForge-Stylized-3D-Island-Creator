@@ -14,6 +14,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 using IsleForge.Helpers;
+using IsleForge.PageStates;
 
 namespace IsleForge.Pages
 {
@@ -30,6 +31,8 @@ namespace IsleForge.Pages
 
         private Button _nextButton;
         private ProgressBar _progressBar;
+
+        private bool HasMapMade = false;
 
         private float TOPHEIGHT = 32;
         private float MIDHEIGHT = 22;
@@ -67,6 +70,36 @@ namespace IsleForge.Pages
         private void HeightMapMaker_Loaded(object sender, RoutedEventArgs e)
         {
             _heightMapCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "HeightMapCanvas");
+            _nextButton = HelperExtensions.FindElementByTag<Button>(this, "NextBtn");
+            _progressBar = HelperExtensions.FindElementByTag<ProgressBar>(this, "HeightProgressBar");
+
+            baseLayer = MapDataStore.BaseLayer;
+            midLayer = MapDataStore.MidLayer;
+            topLayer = MapDataStore.TopLayer;
+            edgeLayer = MapDataStore.EdgeLayer;
+            footprint = MapDataStore.FootPrint;
+
+            footprintMask = GetInverseMask(footprint);
+            bottomAllOnes = GetBottom(footprint);
+           
+
+            if (PageStateStore.HeightMapState != null)
+            {
+                RestorePageFromStoredState();
+            }
+            else
+            {
+                MapDataStore.MaxHeightShare = TOPHEIGHT;
+                MapDataStore.MidHeightShare = MIDHEIGHT;
+                MapDataStore.LowHeightShare = BASEHEIGHT;
+            }
+        }
+
+        private void HeightMapMaker_Loaded2(object sender, RoutedEventArgs e)
+        {
+            _heightMapCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "HeightMapCanvas");
+
+            _nextButton = HelperExtensions.FindElementByTag<Button>(this, "NextBtn");
 
             baseLayer = MapDataStore.BaseLayer;
             midLayer = MapDataStore.MidLayer;
@@ -85,7 +118,12 @@ namespace IsleForge.Pages
 
             //CreateTheHeightMap();
             //CreateTheHeightMapAsync();
-            Task.Run(() => CreateTheHeightMap());
+
+
+            //good for now, but moving to button
+            //Task.Run(() => CreateTheHeightMap());
+
+
             //Task.Run(() => CreateTheHeightMap_WithTiming());
             //
         }
@@ -269,7 +307,7 @@ namespace IsleForge.Pages
                     {
                         _progressBar.Value = percent;
                     });
-                }                   
+                }
             }
 
             //get main layers
@@ -354,7 +392,7 @@ namespace IsleForge.Pages
             var matchedBottomBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, bottomBaseEdgesWork);
             UpdateProgress(50);
             // expand edge redius
-            var expandedBottomBaseEdges = ExpandEdgeInfluenceClean(matchedBottomBaseEdges, (int)(SMALLER_RADIUS * 1.3f), (int)(LARGER_RADIUS *  1.3f));
+            var expandedBottomBaseEdges = ExpandEdgeInfluenceClean(matchedBottomBaseEdges, (int)(SMALLER_RADIUS * 1.3f), (int)(LARGER_RADIUS * 1.3f));
             // create mask area both heights
             var BottomBaseBlendResult = BlendMaskOverwrite(bottomAllOnes, baseLayer, expandedBottomBaseEdges, 0f, BASEHEIGHT);
             UpdateProgress(52);
@@ -418,18 +456,57 @@ namespace IsleForge.Pages
                 if (_progressBar != null)
                 {
                     _progressBar.Value = 100;
-                    _progressBar.Visibility = Visibility.Collapsed;               
+                    _progressBar.Visibility = Visibility.Collapsed;
                 }
-                    
+
+                //allow movement to next page
+                HasMapMade = true;
+                MatchNextButtonToBool();
+
                 CreateLabeledHeightmapLayer(solvedMapWithLabels);
 
             });
+
+
 
             MapDataStore.MaxHeightShare = TOPHEIGHT;
 
         }
 
         #endregion
+
+        private void MatchNextButtonToBool()
+        {
+            Debug.WriteLine("called the button matcher");
+            if (_nextButton != null)
+            {
+                _nextButton.IsEnabled = HasMapMade;
+            }
+        }
+
+        private void ProcessMap_Click(object sender, RoutedEventArgs e)
+        {
+            if (ValidateHeightInputs() == false)
+            {
+                return;
+            }
+
+            HasMapMade = false;
+            MatchNextButtonToBool();
+            //var TopHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "TopHeight");
+            //var MidHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "MidHeight");
+            //var LowHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "LowHeight");
+
+            TOPHEIGHT = (int)HelperExtensions.GetFloatFromTag(this, "TopHeight", 32f);
+            MIDHEIGHT = (int)HelperExtensions.GetFloatFromTag(this, "MidHeight", 22f);
+            BASEHEIGHT = (int)HelperExtensions.GetFloatFromTag(this, "BaseHeight", 12f);
+
+            MapDataStore.MaxHeightShare = TOPHEIGHT;
+            MapDataStore.MidHeightShare = MIDHEIGHT;
+            MapDataStore.LowHeightShare = BASEHEIGHT;
+
+            Task.Run(() => CreateTheHeightMap());
+        }
 
         #region basic mapping
 
@@ -467,6 +544,8 @@ namespace IsleForge.Pages
                 SnapsToDevicePixels = true,
                 IsHitTestVisible = false
             };
+
+            _heightMapLayer = bmp; //to save this for the state
 
             _heightMapCanvas.Children.Add(image);
         }
@@ -1044,47 +1123,6 @@ namespace IsleForge.Pages
 
         #region map combine operations
 
-        private float[,] OverlayMaps(float[,] mapA, float[,] mapB)
-        {
-            int width = mapA.GetLength(0);
-            int height = mapA.GetLength(1);
-            float[,] result = new float[width, height];
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    //result[x, y] = (mapB[x, y] != 0f) ? mapB[x, y] : mapA[x, y];
-                    result[x, y] = (mapB[x, y] > 0f) ? mapB[x, y] : mapA[x, y];
-                }
-            }
-
-            return result;
-        }
-
-        private float[,] SmartOverlayWithMask(float[,] mapA, float[,] mapB, float[,] mask)
-        {
-            int width = mapA.GetLength(0);
-            int height = mapA.GetLength(1);
-            float[,] result = new float[width, height];
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    if (mask[x, y] > 0f && mapB[x, y] >= 0f)
-                    {
-                        result[x, y] = mapB[x, y];
-                    }
-                    else
-                    {
-                        result[x, y] = mapA[x, y];
-                    }
-                }
-            }
-
-            return result;
-        }
 
         public float[,] CombineLabeledMapsToFloatArray(LabeledValue[,] mapA, LabeledValue[,] mapB)
         {
@@ -1142,8 +1180,8 @@ namespace IsleForge.Pages
                         else
                         {
                             result[x, y] = 1;
-                        }                           
-                    }                        
+                        }
+                    }
                     else if (a > 0)
                         result[x, y] = 1;
                     else
@@ -1256,30 +1294,6 @@ namespace IsleForge.Pages
             return result;
         }
 
-        private float[,] RemoveMaskingNegatives(float[,] map)
-        {
-            int width = map.GetLength(0);
-            int height = map.GetLength(1);
-            float[,] result = new float[width, height];
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    if (map[x, y] < 0f)
-                    {
-                        result[x, y] = 0;
-                    }
-                    else
-                    {
-                        result[x, y] = map[x, y];
-                    }
-
-                }
-            }
-
-            return result;
-        }
 
 
 
@@ -1312,45 +1326,6 @@ namespace IsleForge.Pages
             return expanded;
         }
 
-        private void OverlayEdgeOnExpanded(float[,] expanded, float[,] originalEdges)
-        {
-            int width = expanded.GetLength(0);
-            int height = expanded.GetLength(1);
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    if (expanded[x, y] == 0f && originalEdges[x, y] == 1f)
-                    {
-                        expanded[x, y] = 1f;
-                    }
-                }
-            }
-        }
-
-        private float[,] ExpandEdgeInfluence(float[,] labeledEdges, int radius2 = 6, int radius3 = 12)
-        {
-            int width = labeledEdges.GetLength(0);
-            int height = labeledEdges.GetLength(1);
-
-            float[,] expanded = (float[,])labeledEdges.Clone();
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    float val = labeledEdges[x, y];
-
-                    if (val == 2f)
-                        DrawCircularRadius(expanded, x, y, width, height, radius2, 2f);
-                    else if (val == 3f)
-                        DrawCircularRadius(expanded, x, y, width, height, radius3, 3f);
-                }
-            }
-
-            return expanded;
-        }
 
         private void DrawCircularRadius(float[,] map, int centerX, int centerY, int width, int height, int radius, float value)
         {
@@ -1570,20 +1545,106 @@ namespace IsleForge.Pages
                 return; // User said NO — cancel
             }
 
-           // SavePageStateBeforeLeaving();
+            PageStateStore.HeightMapState = null;
 
             if (this.NavigationService.CanGoBack)
             {
                 this.NavigationService.GoBack();
             }
-                
+
         }
         private void Next_Click(object sender, RoutedEventArgs e)
         {
+            SavePageStateBeforeLeaving();
             //Debug.WriteLine($"steps done: {EdgeChangesMade}");
-            this.NavigationService?.Navigate(new MeshMakerPage());         
+            this.NavigationService?.Navigate(new MeshMakerPage());
         }
 
         #endregion
+
+        #region UI validation
+
+        private bool ValidateHeightInputs()
+        {
+            float top = HelperExtensions.GetFloatFromTag(this, "TopHeight", 32f);
+            float mid = HelperExtensions.GetFloatFromTag(this, "MidHeight", 22f);
+            float baseHeight = HelperExtensions.GetFloatFromTag(this, "BaseHeight", 12f);
+
+            // Check non-negative
+            if (top < 0 || mid < 0 || baseHeight < 0)
+            {
+                MessageBox.Show("Heights must be non-negative.", "Input Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            // Check order: top > mid > base
+            if (!(top > mid && mid > baseHeight))
+            {
+                MessageBox.Show("Heights must be ordered: Top > Mid > Base.", "Input Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            // If passed, assign
+            TOPHEIGHT = top;
+            MIDHEIGHT = mid;
+            BASEHEIGHT = baseHeight;
+
+            return true;
+        }
+
+
+        #endregion
+
+        #region page state management
+
+        private void SavePageStateBeforeLeaving()
+        {
+            PageStateStore.HeightMapState = new HeightMapPageState
+            {
+                HeightMapLayer = _heightMapLayer?.Clone(),
+                SolvedMap = MapDataStore.AnnotatedHeightMap,
+                TopHeight = TOPHEIGHT,
+                MidHeight = MIDHEIGHT,
+                BaseHeight = BASEHEIGHT,
+                HasMapBeenCreated = HasMapMade
+            };
+        }
+
+        private void RestorePageFromStoredState()
+        {
+            var state = PageStateStore.HeightMapState;
+
+            _heightMapLayer = state.HeightMapLayer.Clone();
+            //solvedMap = (LabeledValue[,])state.SolvedMap.Clone();
+
+            TOPHEIGHT = state.TopHeight;
+            MIDHEIGHT = state.MidHeight;
+            BASEHEIGHT = state.BaseHeight;
+
+            HasMapMade = state.HasMapBeenCreated;
+
+            // Set TextBoxes back to saved values
+            var TopHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "TopHeight");
+            var MidHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "MidHeight");
+            var BaseHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "BaseHeight");
+
+            TopHeightEntry.Text = TOPHEIGHT.ToString();
+            MidHeightEntry.Text = MIDHEIGHT.ToString();
+            BaseHeightEntry.Text = BASEHEIGHT.ToString();
+
+            MapDataStore.MaxHeightShare = TOPHEIGHT;
+            MapDataStore.MidHeightShare = MIDHEIGHT;
+            MapDataStore.LowHeightShare = BASEHEIGHT;
+
+            CreateLabeledHeightmapLayer(MapDataStore.AnnotatedHeightMap);
+
+            MatchNextButtonToBool();
+
+            Debug.WriteLine("Restored HeightMapPage state.");
+        }
+
+
+        #endregion
+
     }
 }

@@ -18,6 +18,7 @@ using System.IO;
 using IsleForge.Dialogues;
 using IsleForge.Helpers;
 using System.Reflection.Emit;
+using IsleForge.PageStates;
 
 namespace IsleForge.Pages
 {
@@ -469,7 +470,24 @@ namespace IsleForge.Pages
 
         private void Back_Click(object sender, RoutedEventArgs e)
         {
-            //might add the option to go back
+            var result = MessageBox.Show(
+                    $"Are you sure you want to return to the previous page? your progress will not be saved",
+                    "Return to previous page?",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+            if (result == MessageBoxResult.No)
+            {
+                return; // User said NO — cancel
+            }
+
+            //PageStateStore = null;
+
+            if (this.NavigationService.CanGoBack)
+            {
+                this.NavigationService.GoBack();
+            }
+
         }
         private void Next_Click(object sender, RoutedEventArgs e)
         {

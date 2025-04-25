@@ -8,6 +8,13 @@ namespace IsleForge.PageStates
 {
     public static class PageStateStore
     {
-        public static BaseMapPageState BaseMapState;
+        public static BaseMapPageState BaseMapState { get; set; }
+
+        public static EdgeEditingPageState EdgeEditingState { get; set; }
+
+        public static HeightMapPageState HeightMapState { get; set; }
+
+        public static MeshMakerPageState MeshMakerState { get; set; }
+
     }
 }
