@@ -103,7 +103,6 @@ namespace IsleForge.Pages
 
             var debugTexture = GenerateDebugLabelTexture(_meshes, 1024, 1024);
 
-            SaveBitmapToFile(debugTexture, "terrain-debug.png");
 
             builtTexture = GenerateFinalTextureFromLabelGrid(
                 labelGrid,
@@ -705,46 +704,7 @@ namespace IsleForge.Pages
             return "cliff"; // catch-all fallback
         }
 
-        private void SaveBitmapToFile(WriteableBitmap bitmap, string filename)
-        {
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(bitmap));
-
-            string directory = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-                "IsleForge_Debug"
-            );
-
-            System.IO.Directory.CreateDirectory(directory);
-
-            string path = System.IO.Path.Combine(directory, filename);
-
-            using (var stream = new System.IO.FileStream(path, System.IO.FileMode.Create))
-            {
-                encoder.Save(stream);
-            }
-
-            Debug.WriteLine($"Saved debug texture to: {path}");
-        }
-
-        private MeshGeometry3D CombineMeshesTooSharp(Dictionary<string, MeshGeometry3D> meshes)
-        {
-            var combined = new MeshGeometry3D();
-            int indexOffset = 0;
-
-            foreach (var mesh in meshes.Values)
-            {
-                foreach (var pos in mesh.Positions)
-                    combined.Positions.Add(pos);
-
-                foreach (var index in mesh.TriangleIndices)
-                    combined.TriangleIndices.Add(index + indexOffset);
-
-                indexOffset += mesh.Positions.Count;
-            }
-
-            return combined;
-        }
+        
 
         private MeshGeometry3D CombineMeshes(Dictionary<string, MeshGeometry3D> meshes)
         {

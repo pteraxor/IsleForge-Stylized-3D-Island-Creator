@@ -13,8 +13,11 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
+using HelixToolkit.Wpf.SharpDX;
 using IsleForge.DrawingTools;
 using IsleForge.Helpers;
+using IsleForge.PageStates;
+using Polygon = System.Windows.Shapes.Polygon;
 
 namespace IsleForge.Pages
 {
@@ -65,19 +68,120 @@ namespace IsleForge.Pages
             _previewCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "PreviewCanvas");
             _nextButton = HelperExtensions.FindElementByTag<Button>(this, "NextBtn");
 
-            if (_drawCanvas != null)
-            {
-                Debug.WriteLine("DrawCanvas found");
 
-                InitBitmap(800, 600);
-                _drawCanvas.Children.Add(new Image { Source = _bitmap });
-                SetDrawingTool(); // call after bitmap is initialized
+            if (_drawCanvas == null)
+            {
+                Debug.WriteLine("Could not find DrawCanvas. Check the Tag in XAML.");
+                return;
+            }
+            //Debug.WriteLine("DrawCanvas found");
+
+            if (PageStateStore.BaseMapState != null)
+            {
+                RestorePageFromStoredState(); // Restore state from memory
             }
             else
             {
-                Debug.WriteLine("Could not find DrawCanvas. Check the Tag in XAML.");
+                InitBitmap(800, 600);
+                _drawCanvas.Children.Add(new Image { Source = _bitmap });
+                SetDrawingTool(); // Fresh init
             }
+
         }
+
+        #region page state management
+
+        private void RestorePageFromStoredState()
+        {
+            var state = PageStateStore.BaseMapState;
+
+            _bitmap = state.Bitmap.Clone();
+            _undoStack = new Stack<WriteableBitmap>(state.UndoStack.Reverse());
+            _redoStack = new Stack<WriteableBitmap>(state.RedoStack.Reverse());
+            _canvasCoverage = state.CanvasCoverage;
+
+            _drawingToolSize = state.DrawingToolSize;
+            _currentLayer = state.CurrentLayer;
+            _drawingMode = state.DrawingMode;
+            _stampShape = state.StampShape;
+            _restrictToBaseLayer = state.RestrictToBaseLayer;
+
+            _drawCanvas.Children.Clear(); // Clear any old images just to be safe
+            _drawCanvas.Children.Add(new Image { Source = _bitmap });
+
+            UpdateUIFromState(); //make sure the UI matches
+            UpdateUndoRedoButtons(); //make sure the buttons fit the state
+
+            Debug.WriteLine("Restored BaseMapPage state.");
+        }
+
+        private void UpdateUIFromState()
+        {
+            // Brush size label
+            var brushSizeLabel = HelperExtensions.FindElementByTag<TextBlock>(this, "BrushSizeLabel");
+            if (brushSizeLabel != null)
+                brushSizeLabel.Text = _drawingToolSize.ToString();
+
+            // Set brush size slider
+            var slider = HelperExtensions.FindElementByTag<Slider>(this, "BrushSizeSlider");
+            if (slider != null)
+                slider.Value = _drawingToolSize;
+
+            // Set layer selector
+            var layerSelector = HelperExtensions.FindElementByTag<ComboBox>(this, "LayerSelector");
+            if (layerSelector != null)
+                layerSelector.SelectedIndex = _currentLayer;
+
+            // Set drawing mode dropdown
+            var drawingModeSelector = HelperExtensions.FindElementByTag<ComboBox>(this, "DrawingModeSelector");
+            if (drawingModeSelector != null)
+            {
+                var item = drawingModeSelector.Items
+                    .Cast<ComboBoxItem>()
+                    .FirstOrDefault(i => (string)i.Content == _drawingMode);
+                if (item != null)
+                    drawingModeSelector.SelectedItem = item;
+            }
+
+            // Set stamp shape selector
+            var stampShapeSelector = HelperExtensions.FindElementByTag<ComboBox>(this, "StampShapeSelector");
+            if (stampShapeSelector != null)
+            {
+                var item = stampShapeSelector.Items
+                    .Cast<ComboBoxItem>()
+                    .FirstOrDefault(i => (string)i.Content == _stampShape);
+                if (item != null)
+                    stampShapeSelector.SelectedItem = item;
+            }
+
+            // Checkbox state
+            var restrictCheckbox = HelperExtensions.FindElementByTag<CheckBox>(this, "RestrictToBaseLayerCheckbox");
+            if (restrictCheckbox != null)
+                restrictCheckbox.IsChecked = _restrictToBaseLayer;
+
+            SetDrawingTool(); // Refresh the tool with the updated config
+        }
+
+
+        private void SavePageStateBeforeLeaving()
+        {
+            PageStateStore.BaseMapState = new BaseMapPageState
+            {
+                Bitmap = _bitmap.Clone(),
+                UndoStack = new Stack<WriteableBitmap>(_undoStack.Reverse()), // Reverse to preserve stack order
+                RedoStack = new Stack<WriteableBitmap>(_redoStack.Reverse()),
+                CanvasCoverage = _canvasCoverage,
+                DrawingToolSize = _drawingToolSize,
+                CurrentLayer = _currentLayer,
+                DrawingMode = _drawingMode,
+                StampShape = _stampShape,
+                RestrictToBaseLayer = _restrictToBaseLayer
+            };
+
+        }
+
+
+        #endregion
 
         #region initialization
 
@@ -427,65 +531,6 @@ namespace IsleForge.Pages
         #endregion
 
 
-        private void LogCanvasCoverageBAd()
-        {
-            if (_bitmap == null) return;
-
-            int width = _bitmap.PixelWidth;
-            int height = _bitmap.PixelHeight;
-            int bytesPerPixel = _bitmap.Format.BitsPerPixel / 8;
-            int totalPixels = width * height;
-            int coveredPixels = 0;
-
-            int stride = width * bytesPerPixel;
-            byte[] pixelData = new byte[height * stride];
-            _bitmap.CopyPixels(pixelData, stride, 0);
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    int index = y * stride + x * bytesPerPixel;
-
-                    // For BGRA format: [B][G][R][A]
-                    byte alpha = pixelData[index + 3];
-
-                    if (alpha > 0)
-                        coveredPixels++;
-                }
-            }
-
-            double percentCovered = (coveredPixels / (double)totalPixels) * 100;
-            Debug.WriteLine($"[Coverage] Non-transparent Pixels: {coveredPixels}/{totalPixels} ({percentCovered:F2}%)");
-        }
-
-        private void LogCanvasCoverage()
-        {
-            if (_bitmap == null) return;
-
-            int width = _bitmap.PixelWidth;
-            int height = _bitmap.PixelHeight;
-            int totalPixels = width * height;
-            int coveredPixels = 0;
-
-            int stride = width * (_bitmap.Format.BitsPerPixel / 8);
-            byte[] pixelData = new byte[height * stride];
-            _bitmap.CopyPixels(pixelData, stride, 0);
-
-            // Format is BGRA, so alpha is every 4th byte starting at index 3
-            for (int i = 3; i < pixelData.Length; i += 4)
-            {
-                byte alpha = pixelData[i];
-                if (alpha > 0)
-                    coveredPixels++;
-            }
-
-            double percentage = (coveredPixels / (double)totalPixels) * 100;
-            Debug.WriteLine($"Canvas Coverage: {percentage:F2}%");
-            _canvasCoverage = percentage;
-            BehaviorBasedOnPercentage();
-        }
-
         private async Task LogCanvasCoverageAsync()
         {
             if (_bitmap == null) return;
@@ -650,6 +695,23 @@ namespace IsleForge.Pages
         private void Back_Click(object sender, RoutedEventArgs e)
         {
             //might add the option to go back
+            var result = MessageBox.Show(
+                    $"Are you sure you want to return to the welcome page? your progress will not be saved",
+                    "Return to Welcome Page?",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+            if (result == MessageBoxResult.No)
+            {
+                return; // User said NO — cancel
+            }
+
+            PageStateStore.BaseMapState = null; //clear this out if we are returning to the beggining
+
+            //this.NavigationService?.Navigate();
+            if (this.NavigationService.CanGoBack)
+                this.NavigationService.GoBack();
+
         }
         private void Next_Click(object sender, RoutedEventArgs e)
         {
@@ -668,7 +730,7 @@ namespace IsleForge.Pages
                 // If YES, we keep going
             }
             //for when it's time to to the next step. need to consider how to check for when it's okay to do so
-            Debug.WriteLine($"after the message");
+            //Debug.WriteLine($"after the message");
 
             // Save a clone of the current bitmap into the manager
             if (_bitmap != null)
@@ -676,6 +738,9 @@ namespace IsleForge.Pages
                ExportIntermediateMap();
                BitmapManager.Set("BaseLayer", _bitmap.Clone());                
             }
+            //save a state for everything
+            SavePageStateBeforeLeaving();
+
 
             // Navigate to next step
             this.NavigationService?.Navigate(new EdgeEditingPage());
