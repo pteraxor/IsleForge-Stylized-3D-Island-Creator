@@ -28,6 +28,9 @@ namespace IsleForge.Pages
         private WriteableBitmap _heightMapLayer;
         private Image _heightMapLayerImage;
 
+        private Button _nextButton;
+        private ProgressBar _progressBar;
+
         private float TOPHEIGHT = 32;
         private float MIDHEIGHT = 22;
         private float BASEHEIGHT = 12;
@@ -69,7 +72,9 @@ namespace IsleForge.Pages
             midLayer = MapDataStore.MidLayer;
             topLayer = MapDataStore.TopLayer;
             edgeLayer = MapDataStore.EdgeLayer;
-            footprint = MapDataStore.FootPrint;      
+            footprint = MapDataStore.FootPrint;
+
+            _progressBar = HelperExtensions.FindElementByTag<ProgressBar>(this, "HeightProgressBar");
 
             footprintMask = GetInverseMask(footprint);
             bottomAllOnes = GetBottom(footprint);
@@ -78,51 +83,228 @@ namespace IsleForge.Pages
             MapDataStore.MidHeightShare = MIDHEIGHT;
             MapDataStore.LowHeightShare = BASEHEIGHT;
 
-            CreateTheHeightMap();
+            //CreateTheHeightMap();
+            //CreateTheHeightMapAsync();
+            Task.Run(() => CreateTheHeightMap());
+            //Task.Run(() => CreateTheHeightMap_WithTiming());
+            //
         }
 
         #region main processessing
 
-        private void CreateTheHeightMap()
+        private async Task CreateTheHeightMapAsync()
         {
-            //CreateALayer(baseLayer, Colors.Red);
+            //CreateTheHeightMap();
+        }
+
+        private async Task CreateTheHeightMap_WithTiming()
+        {
+            //getting an idea of how much time these things take to base progress bar on
+            var totalWatch = Stopwatch.StartNew();
+            var stepWatch = Stopwatch.StartNew();
+
+            void LogStep(string description)
+            {
+                stepWatch.Stop();
+                Debug.WriteLine($"[{description}] {stepWatch.ElapsedMilliseconds} ms");
+                stepWatch.Restart();
+            }
+
+            Debug.WriteLine("===== Starting detailed HeightMap timing =====");
+
+            // Start
+            stepWatch.Restart();
+
             var HeightBaseLayer = ConvertArrayToHeight(baseLayer, BASEHEIGHT);
-            //CreateALayerHeightmap(HeightBaseLayer);
+            LogStep("Convert baseLayer");
 
-            //CreateALayer(midLayer, Colors.Green);
             var HeightMidLayer = ConvertArrayToHeight(midLayer, MIDHEIGHT);
-            //CreateALayerHeightmap(HeightMidLayer);
+            LogStep("Convert midLayer");
 
-            //CreateALayer(topLayer, Colors.Blue);
             var HeightTopLayer = ConvertArrayToHeight(topLayer, TOPHEIGHT);
-            //CreateALayerHeightmap(HeightTopLayer);
+            LogStep("Convert topLayer");
 
             midBaseEdges = DetectLogicalEdges(baseLayer, midLayer, topLayer);
-            //CreateALayer(midBaseEdges, Colors.Gold);
+            LogStep("Detect midBaseEdges");
 
             topMidEdges = DetectEdgeBetweenAdjacentLayers(midLayer, topLayer);
-            //ExportLayerToText("topMidEdges.txt", topMidEdges);
-
+            LogStep("Detect topMidEdges");
 
             bottomBaseEdges = DetectSobelEdges(baseLayer);
-            topBaseEdges = DetectLogicalEdges(topLayer, baseLayer, midLayer);
-            //var matchedbottomBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, bottomBaseEdges);
+            LogStep("Detect bottomBaseEdges");
 
+            topBaseEdges = DetectLogicalEdges(topLayer, baseLayer, midLayer);
+            LogStep("Detect topBaseEdges");
+
+            var sub1 = SubtractWithRadius(topBaseEdges, topMidEdges, 2);
+            LogStep("Subtract topBaseEdges - topMidEdges");
+
+            var sub2 = SubtractWithRadius(sub1, midBaseEdges, 2);
+            LogStep("Subtract sub1 - midBaseEdges");
+
+            var topBaseEdgesWork = sub2;
+            var matchedTopBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, topBaseEdgesWork);
+            LogStep("Match topBaseEdges to proximity");
+
+            var expandedTopBaseEdges = ExpandEdgeInfluenceClean(matchedTopBaseEdges, SMALLER_RADIUS, LARGER_RADIUS);
+            LogStep("Expand topBaseEdges");
+
+            var TopBaseBlendResult = BlendMaskOverwrite(baseLayer, topLayer, expandedTopBaseEdges, BASEHEIGHT, TOPHEIGHT);
+            LogStep("Blend top base layers");
+
+            var TopBaseSmoothed = SmoothVertices2D(TopBaseBlendResult, factor: SMOOTHING_FACTOR, iterations: 70);
+            LogStep("Smooth TopBaseBlendResult");
+
+            var matchedTopMidEdges = MatchEdgeLabelsByProximity(edgeLayer, topMidEdges);
+            LogStep("Match topMidEdges to proximity");
+
+            var expandedTopMidEdges = ExpandEdgeInfluenceClean(matchedTopMidEdges, SMALLER_RADIUS, LARGER_RADIUS);
+            LogStep("Expand topMidEdges");
+
+            var TopMidBlendResult = BlendMaskOverwrite(midLayer, topLayer, expandedTopMidEdges, MIDHEIGHT, TOPHEIGHT);
+            LogStep("Blend top-mid layers");
+
+            var TopMidSmoothed = SmoothVertices2D(TopMidBlendResult, factor: SMOOTHING_FACTOR, iterations: 70);
+            LogStep("Smooth TopMidBlendResult");
+
+            sub1 = SubtractWithRadius(midBaseEdges, topMidEdges, 2);
+            LogStep("Subtract midBaseEdges - topMidEdges");
+
+            var topMidEdgesWork = sub1;
+            var matchedmidBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, topMidEdgesWork);
+            LogStep("Match midBaseEdges proximity");
+
+            var expandedmidBaseEdges = ExpandEdgeInfluenceClean(matchedmidBaseEdges, SMALLER_RADIUS, LARGER_RADIUS);
+            LogStep("Expand midBaseEdges");
+
+            var midBaseBlendResult = BlendMaskOverwrite(baseLayer, midLayer, expandedmidBaseEdges, BASEHEIGHT, MIDHEIGHT);
+            LogStep("Blend mid-base layers");
+
+            var midBaseSmoothed = SmoothVertices2D(midBaseBlendResult, factor: SMOOTHING_FACTOR, iterations: 70);
+            LogStep("Smooth midBaseBlendResult");
+
+            var matchedBottomBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, bottomBaseEdges);
+            LogStep("Match bottomBaseEdges proximity");
+
+            var expandedBottomBaseEdges = ExpandEdgeInfluenceClean(matchedBottomBaseEdges, (int)(SMALLER_RADIUS * 1.3f), (int)(LARGER_RADIUS * 1.3f));
+            LogStep("Expand bottomBaseEdges");
+
+            var BottomBaseBlendResult = BlendMaskOverwrite(bottomAllOnes, baseLayer, expandedBottomBaseEdges, 0f, BASEHEIGHT);
+            LogStep("Blend bottom layers");
+
+            var BottomBaseSmoothed = SmoothVertices2D(BottomBaseBlendResult, factor: (SMOOTHING_FACTOR * 0.8f), iterations: 230, ignoreZeroes: false);
+            LogStep("Smooth BottomBaseBlendResult");
+
+            var labeledBaseMap = CreateLabeledMap(HeightBaseLayer, "Base");
+            LogStep("Create labeledBaseMap");
+
+            var labeledMidLayer = CreateLabeledMap(HeightMidLayer, "Mid");
+            LogStep("Create labeledMidLayer");
+
+            var labeledTopLayer = CreateLabeledMap(HeightTopLayer, "Top");
+            LogStep("Create labeledTopLayer");
+
+            var labeledTopBaseSmoothed = CreateLabeledMap(TopBaseSmoothed, "ramp");
+            LogStep("Create labeledTopBaseSmoothed");
+
+            var labeledTopMidSmoothed = CreateLabeledMap(TopMidSmoothed, "ramp");
+            LogStep("Create labeledTopMidSmoothed");
+
+            var labeledmidBaseSmoothed = CreateLabeledMap(midBaseSmoothed, "ramp");
+            LogStep("Create labeledmidBaseSmoothed");
+
+            var labeledBottomBaseSmoothed = CreateLabeledMap(BottomBaseSmoothed, "beach");
+            LogStep("Create labeledBottomBaseSmoothed");
+
+            var solvedMapWithLabels = labeledBaseMap;
+            solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledBottomBaseSmoothed);
+            solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledMidLayer);
+            solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledTopLayer);
+            LogStep("Overlay labeled maps");
+
+            float[,] LowerMask = SubtractLabeledMapsToFloatArray(labeledBaseMap, labeledBottomBaseSmoothed);
+            LogStep("Create LowerMask");
+
+            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledTopBaseSmoothed, LowerMask);
+            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledTopMidSmoothed, LowerMask);
+            solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledmidBaseSmoothed, LowerMask);
+            LogStep("Smart overlay smooth ramps");
+
+            RemoveNegativesFromLabeledMap(solvedMapWithLabels);
+            LogStep("Remove negatives from final map");
+
+            SmoothLabeledMap(solvedMapWithLabels, 0.4f, 8, ignoreZeroes: false);
+            LogStep("Final smoothing of labeled map");
+
+            MapDataStore.AnnotatedHeightMap = solvedMapWithLabels;
+            LogStep("Save Annotated Map");
+
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                CreateLabeledHeightmapLayer(solvedMapWithLabels);
+            });
+            LogStep("Render heightmap layer");
+
+            totalWatch.Stop();
+            Debug.WriteLine($"==== TOTAL HEIGHTMAP TIME: {totalWatch.ElapsedMilliseconds} ms ====");
+        }
+
+
+        private async Task CreateTheHeightMap()
+        {
+            if (_progressBar != null)
+            {
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    _progressBar.Visibility = Visibility.Visible;
+                    _progressBar.Value = 0;
+                });
+            }
+
+            void UpdateProgress(double percent)
+            {
+                if (_progressBar != null)
+                {
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        _progressBar.Value = percent;
+                    });
+                }                   
+            }
+
+            //get main layers
+            var HeightBaseLayer = ConvertArrayToHeight(baseLayer, BASEHEIGHT);
+            var HeightMidLayer = ConvertArrayToHeight(midLayer, MIDHEIGHT);
+            var HeightTopLayer = ConvertArrayToHeight(topLayer, TOPHEIGHT);
+            UpdateProgress(0.3);
+
+            //get edges using edge detection
+            midBaseEdges = DetectLogicalEdges(baseLayer, midLayer, topLayer);
+            topMidEdges = DetectEdgeBetweenAdjacentLayers(midLayer, topLayer);
+            bottomBaseEdges = DetectSobelEdges(baseLayer);
+            topBaseEdges = DetectLogicalEdges(topLayer, baseLayer, midLayer);
+            UpdateProgress(4.2);
+
+            //now we need to computer different segments
             #region top base
 
-            //createing the top base edges
+            //creating the top base edges by subtracting things that don't count for them
             var sub1 = SubtractWithRadius(topBaseEdges, topMidEdges, 2);
             var sub2 = SubtractWithRadius(sub1, midBaseEdges, 2);
             var topBaseEdgesWork = sub2;
+
+            //matching the edges to the drawn map
             var matchedTopBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, topBaseEdgesWork);
-            //var expandedEdges = ExpandEdgeInfluence(matchedTopBaseEdges); // ExpandEdgeInfluenceClean
-            var expandedTopBaseEdges = ExpandEdgeInfluenceClean(matchedTopBaseEdges, SMALLER_RADIUS, LARGER_RADIUS); // 
-
-            //CreateALayer(expandedEdges, Colors.Indigo);
-
+            //expanding the edges
+            var expandedTopBaseEdges = ExpandEdgeInfluenceClean(matchedTopBaseEdges, SMALLER_RADIUS, LARGER_RADIUS);
+            //get the expanded area with both heights in it
             var TopBaseBlendResult = BlendMaskOverwrite(baseLayer, topLayer, expandedTopBaseEdges, BASEHEIGHT, TOPHEIGHT);
+            UpdateProgress(7);
             //ExportLayerToText("blendResult.txt", TopBaseBlendResult);
+
+            //smooth that area
             var TopBaseSmoothed = SmoothVertices2D(TopBaseBlendResult, factor: SMOOTHING_FACTOR, iterations: 70);
+            UpdateProgress(14);
             //CreateALayerHeightmap(TopBaseSmoothed);
             #endregion
 
@@ -133,8 +315,10 @@ namespace IsleForge.Pages
             var expandedTopMidEdges = ExpandEdgeInfluenceClean(matchedTopMidEdges, SMALLER_RADIUS, LARGER_RADIUS);
             // create mask area both heights
             var TopMidBlendResult = BlendMaskOverwrite(midLayer, topLayer, expandedTopMidEdges, MIDHEIGHT, TOPHEIGHT);
+            UpdateProgress(18);
             //smooth heights together
             var TopMidSmoothed = SmoothVertices2D(TopMidBlendResult, factor: SMOOTHING_FACTOR, iterations: 70);
+            UpdateProgress(25);
 
             //CreateALayerHeightmap(TopMidSmoothed);
             //CreateALayer(topMidEdges, Colors.Gold);
@@ -144,15 +328,19 @@ namespace IsleForge.Pages
             #region midbase
             sub1 = SubtractWithRadius(midBaseEdges, topMidEdges, 2);//topMidEdges
             var topMidEdgesWork = sub1;
+            UpdateProgress(26);
             // match edges to user drawn edges
             var matchedmidBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, topMidEdgesWork);
+            UpdateProgress(29);
             // expand edge redius
             var expandedmidBaseEdges = ExpandEdgeInfluenceClean(matchedmidBaseEdges, SMALLER_RADIUS, LARGER_RADIUS);
             //expandedmidBaseEdges = SubtractWithRadius(expandedmidBaseEdges, footprint, 1); //now this seems to bleed over a little trying to fix that
             // create mask area both heights
             var midBaseBlendResult = BlendMaskOverwrite(baseLayer, midLayer, expandedmidBaseEdges, BASEHEIGHT, MIDHEIGHT);
+            UpdateProgress(32);
             //smooth heights together
             var midBaseSmoothed = SmoothVertices2D(midBaseBlendResult, factor: SMOOTHING_FACTOR, iterations: 70);
+            UpdateProgress(37);
 
             //CreateALayerHeightmap(midBaseSmoothed);
             //CreateALayer(expandedmidBaseEdges, Colors.Gold);
@@ -164,15 +352,17 @@ namespace IsleForge.Pages
             var bottomBaseEdgesWork = bottomBaseEdges;
             // match edges to user drawn edges
             var matchedBottomBaseEdges = MatchEdgeLabelsByProximity(edgeLayer, bottomBaseEdgesWork);
+            UpdateProgress(50);
             // expand edge redius
             var expandedBottomBaseEdges = ExpandEdgeInfluenceClean(matchedBottomBaseEdges, (int)(SMALLER_RADIUS * 1.3f), (int)(LARGER_RADIUS *  1.3f));
             // create mask area both heights
             var BottomBaseBlendResult = BlendMaskOverwrite(bottomAllOnes, baseLayer, expandedBottomBaseEdges, 0f, BASEHEIGHT);
+            UpdateProgress(52);
             //smooth heights together
             var BottomBaseSmoothed = SmoothVertices2D(BottomBaseBlendResult, factor: (SMOOTHING_FACTOR * 0.8f), iterations: 230, ignoreZeroes: false);
-
+            UpdateProgress(70);
             //CreateALayerHeightmap(BottomBaseSmoothed);
-           // CreateALayer(expandedBottomBaseEdges, Colors.Gold);
+            // CreateALayer(expandedBottomBaseEdges, Colors.Gold);
 
             //return;
             #endregion
@@ -182,10 +372,14 @@ namespace IsleForge.Pages
             var labeledTopLayer = CreateLabeledMap(HeightTopLayer, "Top");
             var labeledTopBaseSmoothed = CreateLabeledMap(TopBaseSmoothed, "ramp");
             var labeledTopMidSmoothed = CreateLabeledMap(TopMidSmoothed, "ramp");
+            UpdateProgress(80);
             var labeledmidBaseSmoothed = CreateLabeledMap(midBaseSmoothed, "ramp");
+            UpdateProgress(81);
             var labeledBottomBaseSmoothed = CreateLabeledMap(BottomBaseSmoothed, "beach");
+            UpdateProgress(82);
 
             var solvedMapWithLabels = labeledBaseMap;
+            UpdateProgress(83);
 
             //ordering these is important so they don't overwrite weirdly
             solvedMapWithLabels = OverlayLabeledMaps(solvedMapWithLabels, labeledBottomBaseSmoothed);
@@ -200,21 +394,36 @@ namespace IsleForge.Pages
 
             //making a new mask for the other smoother things
             float[,] LowerMask = SubtractLabeledMapsToFloatArray(labeledBaseMap, labeledBottomBaseSmoothed);//CombineLabeledMapsToFloatArray(labeledBottomBaseSmoothed, labeledBaseMap);
+            UpdateProgress(84);
+
             //SubtractLabeledMapsToFloatArray
 
             solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledTopBaseSmoothed, LowerMask);
             solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledTopMidSmoothed, LowerMask);
             solvedMapWithLabels = SmartOverlayLabeledWithMask(solvedMapWithLabels, labeledmidBaseSmoothed, LowerMask);
-            
+            UpdateProgress(85);
+
 
             RemoveNegativesFromLabeledMap(solvedMapWithLabels);
+            UpdateProgress(87);
 
             SmoothLabeledMap(solvedMapWithLabels, 0.4f, 8, ignoreZeroes: false);
+            UpdateProgress(95);
 
             //SaveLabeledMapToText("solvedMapWithLabels.txt", solvedMapWithLabels);
             MapDataStore.AnnotatedHeightMap = solvedMapWithLabels;
 
-            CreateLabeledHeightmapLayer(solvedMapWithLabels);
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                if (_progressBar != null)
+                {
+                    _progressBar.Value = 100;
+                    _progressBar.Visibility = Visibility.Collapsed;               
+                }
+                    
+                CreateLabeledHeightmapLayer(solvedMapWithLabels);
+
+            });
 
             MapDataStore.MaxHeightShare = TOPHEIGHT;
 
@@ -1350,8 +1559,24 @@ namespace IsleForge.Pages
 
         private void Back_Click(object sender, RoutedEventArgs e)
         {
-            //might add the option to go back
+            var result = MessageBox.Show(
+                    $"Are you sure you want to return to the previous page? your progress will not be saved",
+                    "Return to previous page?",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
 
+            if (result == MessageBoxResult.No)
+            {
+                return; // User said NO — cancel
+            }
+
+           // SavePageStateBeforeLeaving();
+
+            if (this.NavigationService.CanGoBack)
+            {
+                this.NavigationService.GoBack();
+            }
+                
         }
         private void Next_Click(object sender, RoutedEventArgs e)
         {

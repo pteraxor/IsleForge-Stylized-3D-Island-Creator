@@ -21,11 +21,7 @@
 
                 <!--<Button Content="Process Map" Margin="0,15,0,0" Click="ProcessMap_Click"/>-->
 
-                <ProgressBar Tag="EdgeProgressBar"
-                 Minimum="0" Maximum="100"
-                 Height="20"
-                 Visibility="Visible"
-                 Margin="10"/>
+                
 
             </StackPanel>
         </local:BaseLayout.LeftContent>
@@ -52,6 +48,11 @@
         <local:BaseLayout.RightContent>
             <Grid>
                 <Canvas Tag="HeightMapCanvas" Background="Black"/>
+                <ProgressBar Tag="HeightProgressBar"
+                     Minimum="0" Maximum="100"
+                     Height="40"
+                     Visibility="Collapsed"
+                     Margin="10"/>
             </Grid>
         </local:BaseLayout.RightContent>
     </local:BaseLayout>
