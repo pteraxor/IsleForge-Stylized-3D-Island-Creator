@@ -39,7 +39,7 @@ namespace IsleForge.Pages
 
         private Stack<WriteableBitmap> _undoStack = new Stack<WriteableBitmap>();
         private Stack<WriteableBitmap> _redoStack = new Stack<WriteableBitmap>();
-        private const int MaxHistory = 5;
+        private const int MaxHistory = 15;
 
         private string _drawingMode = "Freehand";
 
@@ -507,8 +507,12 @@ namespace IsleForge.Pages
             _undoStack.Push(clone);
 
             // Keep undo stack limited in size
-            if (_undoStack.Count > MaxHistory)
-                _undoStack = new Stack<WriteableBitmap>(_undoStack.Reverse().Take(MaxHistory).Reverse());
+            if (_undoStack.Count >= MaxHistory)
+            {
+                var tempList = _undoStack.Reverse().ToList();
+                tempList.RemoveAt(0); // Remove oldest
+                _undoStack = new Stack<WriteableBitmap>(tempList);
+            }
 
             // Clear redo history, as new action breaks forward history
             _redoStack.Clear();
@@ -637,7 +641,7 @@ namespace IsleForge.Pages
 
                         if (edgePixel.A == 255 && edgePixel.R == 0 && edgePixel.G == 0 && edgePixel.B == 0)
                         {
-                            //Debug.WriteLine("a shear edge");
+                            //Debug.WriteLine("a sheer edge");
                             edgeLayer[x, y] = 1f;
                         }                           
                         else if (edgePixel == Color.FromRgb(250, 140, 50))
@@ -729,7 +733,7 @@ namespace IsleForge.Pages
             if (EdgeChangesMade <= 0)
             {
                 var result = MessageBox.Show(
-                    $"No Changes have been made to the edge layer. This will result in all shear edges. Is this okay?",
+                    $"No Changes have been made to the edge layer. This will result in all sheer edges. Is this okay?",
                     "Default Edges Warning",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning);

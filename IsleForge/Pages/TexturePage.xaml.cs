@@ -19,6 +19,7 @@ using IsleForge.Dialogues;
 using IsleForge.Helpers;
 using System.Reflection.Emit;
 using IsleForge.PageStates;
+using SharpDX.Direct3D11;
 
 namespace IsleForge.Pages
 {
@@ -51,7 +52,7 @@ namespace IsleForge.Pages
         private const string DefaultRock = "RockAlbedo.png";
         private const string DefaultSand = "SandAlbedo.png";
 
-        public double TileScale = 1;
+        public double TileScale = 5;
 
         private List<(double U, double V, string Label)> _collectedUVs = new();
         string[,] labelGrid;
@@ -67,24 +68,9 @@ namespace IsleForge.Pages
             _meshes = MeshDataStore.Meshes;
             _originalPositions = MeshDataStore.OriginalMeshPositions;
 
-            foreach (var kvp in _meshes)
-            {
-                string label = kvp.Key;
-                var mesh = kvp.Value;
-                Debug.WriteLine($"[InitMesh] Label in _meshes: {label}");
-                //_modelGroup.Children.Add(new GeometryModel3D(mesh, material));
-                if (kvp.Key == "cliff")
-                {
-                    Debug.WriteLine($"[VertexCount] cliff mesh has {kvp.Value.Positions.Count} vertices.");
-                }
-            }
 
             _MapCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "MapCanvas");
 
-            //load default textures
-            _grassBrush = LoadTilingBrush(DefaultGrass);
-            _rockBrush = LoadTilingBrush(DefaultRock);
-            _sandBrush = LoadTilingBrush(DefaultSand);
 
             //this worked fine on the previous page
             //_viewport3D = FindVisualChild<Viewport3D>(this);
@@ -101,39 +87,102 @@ namespace IsleForge.Pages
             _rockBitmapSource = LoadBitmap("RockAlbedo.png");
             _sandBitmapSource = LoadBitmap("SandAlbedo.png");
 
+            TileScale = App.CurrentSettings.TextureTiling;
+            UpdateUIFromSaved();
+            //here is a good stopping point
 
+            Task.Run(() => LoadAfterPageLoads());
+
+        }
+
+        private void UpdateUIFromSaved()
+        {
+            var TilingLabel = HelperExtensions.FindElementByTag<TextBox>(this, "TextureSizeLabel");
+            var TilingSlider = HelperExtensions.FindElementByTag<Slider>(this, "TextureSize");
+
+            TilingLabel.Text = TileScale.ToString();
+            TilingSlider.Value = TileScale;
+
+        }
+
+        #region async loading
+
+        private async Task LoadAfterPageLoads3()
+        {
+            // Do all heavy calculations and data prep first
             var debugTexture = GenerateDebugLabelTexture(_meshes, 1024, 1024);
-
-
             builtTexture = GenerateFinalTextureFromLabelGrid(
-                labelGrid,
-                _grassBitmapSource, _rockBitmapSource, _sandBitmapSource,
-                1024, 1024,
-                tileScale: TileScale
-            );
-
-            //var material = new DiffuseMaterial(new ImageBrush(debugTexture) { Stretch = Stretch.Fill });
-            var material = new DiffuseMaterial(new ImageBrush(builtTexture) { Stretch = Stretch.Fill });
-
-            _modelGroup.Children.Clear();
-
-            //redo mesh making
-
+                    labelGrid,
+                    _grassBitmapSource, _rockBitmapSource, _sandBitmapSource,
+                    1024, 1024,
+                    tileScale: TileScale
+                );
+            //var combined = CombineMeshes(_meshes);
             combinedMesh = CombineMeshes(_meshes);
             Point3D desiredCenter = MeshDataStore.MeshCalculatedCenter;
             MeshGeometry3D centeredMesh = CenterMeshToPoint(combinedMesh, desiredCenter);
 
             combinedMesh = centeredMesh;
-
             ApplyTopDownUV(combinedMesh, 0.1);
 
+            var material = new DiffuseMaterial(new ImageBrush(builtTexture) { Stretch = Stretch.Fill });
 
-
-            _modelGroup.Children.Clear();
-            _modelGroup.Children.Add(new GeometryModel3D(combinedMesh, material));
-
-            SetCameraToMesh();
+            //Only when everything is READY
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                //Only light UI object creation here
+                //builtTexture = builtTex;
+                _modelGroup.Children.Clear();
+                _modelGroup.Children.Add(new GeometryModel3D(combinedMesh, material));
+                SetCameraToMesh();
+            });
         }
+
+
+        private async Task LoadAfterPageLoads()
+        {
+            
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+
+                var debugTexture = GenerateDebugLabelTexture(_meshes, 1024, 1024);
+
+
+                builtTexture = GenerateFinalTextureFromLabelGrid(
+                    labelGrid,
+                    _grassBitmapSource, _rockBitmapSource, _sandBitmapSource,
+                    1024, 1024,
+                    tileScale: TileScale
+                );
+
+                //var material = new DiffuseMaterial(new ImageBrush(debugTexture) { Stretch = Stretch.Fill });
+                var material = new DiffuseMaterial(new ImageBrush(builtTexture) { Stretch = Stretch.Fill });
+
+
+
+                //redo mesh making
+
+                combinedMesh = CombineMeshes(_meshes);
+                Point3D desiredCenter = MeshDataStore.MeshCalculatedCenter;
+                MeshGeometry3D centeredMesh = CenterMeshToPoint(combinedMesh, desiredCenter);
+
+                combinedMesh = centeredMesh;
+
+                ApplyTopDownUV(combinedMesh, 0.1);
+
+
+                _modelGroup.Children.Clear();
+                _modelGroup.Children.Add(new GeometryModel3D(combinedMesh, material));
+
+
+                SetCameraToMesh();
+            });
+
+                     
+        }
+
+        #endregion
+
 
         #region custom texturing
 
@@ -341,15 +390,35 @@ namespace IsleForge.Pages
         {
             TileScale = e.NewValue;
 
-            var brushSizeLabel = HelperExtensions.FindElementByTag<TextBlock>(this, "TextureSizeLabel");
+            var brushSizeLabel = HelperExtensions.FindElementByTag<TextBox>(this, "TextureSizeLabel");
             if (brushSizeLabel != null)
             {
                 brushSizeLabel.Text = TileScale.ToString();
             }
 
-
-            Debug.WriteLine($"Brush size changed to {TileScale}");
+            Debug.WriteLine($"tiling size changed to {TileScale}");
         }
+        private void UseTextBox_Click(object sender, RoutedEventArgs e)
+        {
+            var textBox = HelperExtensions.FindElementByTag<TextBox>(this, "TextureSizeLabel");
+            //string newText = textBox?.Text;
+            var input = textBox.Text;
+
+            //parse the result for a double
+            if (double.TryParse(input, out double result))
+            {
+                TileScale = result;
+                var TilingSlider = HelperExtensions.FindElementByTag<Slider>(this, "TextureSize");
+                TilingSlider.Value = TileScale;
+            }
+            else
+            {
+                textBox.Text = TileScale.ToString();
+            }
+          
+
+        }
+
 
         private void ExportTexture_Click(object sender, RoutedEventArgs e)
         {
@@ -422,6 +491,85 @@ namespace IsleForge.Pages
             }
         }
 
+        private void ExportMaterialFile(string objPath, string textureFileName, string matName)
+        {
+            string mtlPath = System.IO.Path.ChangeExtension(objPath, ".mtl");
+            string materialName = matName;// "IslandPackedMat"; //
+
+            using (var writer = new StreamWriter(mtlPath))
+            {
+                writer.WriteLine("# Exported MTL file");
+                writer.WriteLine($"newmtl {materialName}");
+                writer.WriteLine("Ka 1.000 1.000 1.000"); // Ambient color
+                writer.WriteLine("Kd 1.000 1.000 1.000"); // Diffuse color
+                writer.WriteLine("Ks 0.000 0.000 0.000"); // Specular color
+                writer.WriteLine("d 1.0");                // Transparency (1 = opaque)
+                writer.WriteLine("illum 1");              // Illumination model
+                writer.WriteLine($"map_Kd {System.IO.Path.GetFileName(textureFileName)}"); // Diffuse texture
+            }
+        }
+
+        private void ExportPacked_Click(object sender, RoutedEventArgs e)
+        {
+            string materialName = "IslandPackedMat";
+
+            var saveDialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Filter = "Wavefront OBJ|*.obj",
+                Title = "Save Combined Mesh"
+            };
+
+            if (saveDialog.ShowDialog() == true)
+            {
+                string objPath = saveDialog.FileName;
+                string textureFileName = System.IO.Path.ChangeExtension(objPath, ".png");
+
+                // 1. Save OBJ
+                using (var writer = new StreamWriter(objPath))
+                {
+                    writer.WriteLine("# Exported OBJ mesh");
+                    writer.WriteLine($"mtllib {System.IO.Path.GetFileNameWithoutExtension(objPath)}.mtl"); // <<< important
+                    writer.WriteLine($"usemtl {materialName}");
+
+                    foreach (var p in combinedMesh.Positions)
+                        writer.WriteLine($"v {p.X:0.######} {p.Y:0.######} {p.Z:0.######}");
+
+                    bool hasUVs = combinedMesh.TextureCoordinates != null &&
+                                  combinedMesh.TextureCoordinates.Count == combinedMesh.Positions.Count;
+
+                    if (hasUVs)
+                    {
+                        foreach (var uv in combinedMesh.TextureCoordinates)
+                            writer.WriteLine($"vt {uv.X:0.######} {1.0 - uv.Y:0.######}");
+                    }
+
+                    for (int i = 0; i < combinedMesh.TriangleIndices.Count; i += 3)
+                    {
+                        int i0 = combinedMesh.TriangleIndices[i] + 1;
+                        int i1 = combinedMesh.TriangleIndices[i + 1] + 1;
+                        int i2 = combinedMesh.TriangleIndices[i + 2] + 1;
+
+                        if (hasUVs)
+                            writer.WriteLine($"f {i0}/{i0} {i1}/{i1} {i2}/{i2}");
+                        else
+                            writer.WriteLine($"f {i0} {i1} {i2}");
+                    }
+                }
+
+                // 2. Save Texture PNG
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(builtTexture));
+                using (var stream = new FileStream(textureFileName, FileMode.Create))
+                {
+                    encoder.Save(stream);
+                }
+
+                // 3. Save MTL
+                ExportMaterialFile(objPath, textureFileName, materialName);
+
+                MessageBox.Show($"Exported:\n{objPath}\n{textureFileName}\n{System.IO.Path.ChangeExtension(objPath, ".mtl")}", "Export Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
 
 
         #endregion

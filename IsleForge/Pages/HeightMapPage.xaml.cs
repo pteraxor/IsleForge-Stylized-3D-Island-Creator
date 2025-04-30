@@ -81,7 +81,7 @@ namespace IsleForge.Pages
 
             footprintMask = GetInverseMask(footprint);
             bottomAllOnes = GetBottom(footprint);
-           
+
 
             if (PageStateStore.HeightMapState != null)
             {
@@ -89,9 +89,16 @@ namespace IsleForge.Pages
             }
             else
             {
+                //load the defaults from the settings
+                TOPHEIGHT = App.CurrentSettings.TopHeight;
+                MIDHEIGHT = App.CurrentSettings.MidHeight;
+                BASEHEIGHT = App.CurrentSettings.BaseHeight;
+
                 MapDataStore.MaxHeightShare = TOPHEIGHT;
                 MapDataStore.MidHeightShare = MIDHEIGHT;
                 MapDataStore.LowHeightShare = BASEHEIGHT;
+
+                SetTextValuesForHeights();
             }
         }
 
@@ -1610,6 +1617,17 @@ namespace IsleForge.Pages
             };
         }
 
+        private void SetTextValuesForHeights()
+        {
+            var TopHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "TopHeight");
+            var MidHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "MidHeight");
+            var BaseHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "BaseHeight");
+
+            TopHeightEntry.Text = TOPHEIGHT.ToString();
+            MidHeightEntry.Text = MIDHEIGHT.ToString();
+            BaseHeightEntry.Text = BASEHEIGHT.ToString();
+        }
+
         private void RestorePageFromStoredState()
         {
             var state = PageStateStore.HeightMapState;
@@ -1624,13 +1642,7 @@ namespace IsleForge.Pages
             HasMapMade = state.HasMapBeenCreated;
 
             // Set TextBoxes back to saved values
-            var TopHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "TopHeight");
-            var MidHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "MidHeight");
-            var BaseHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "BaseHeight");
-
-            TopHeightEntry.Text = TOPHEIGHT.ToString();
-            MidHeightEntry.Text = MIDHEIGHT.ToString();
-            BaseHeightEntry.Text = BASEHEIGHT.ToString();
+            SetTextValuesForHeights();
 
             MapDataStore.MaxHeightShare = TOPHEIGHT;
             MapDataStore.MidHeightShare = MIDHEIGHT;

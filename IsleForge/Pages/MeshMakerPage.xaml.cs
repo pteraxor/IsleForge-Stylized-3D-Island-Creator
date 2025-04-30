@@ -41,6 +41,11 @@ namespace IsleForge.Pages
         private float MIDVALUE = 22f;
         private float LOWVALUE = 12f;
 
+        private float noiseStrength = 0.5f;
+        private float noiseScale = 0.07f;
+        private int noiseOctaves = 4;
+        private float noiseLacunarity = 2.0f;
+
         private Viewport3D _viewport3D;
         private Model3DGroup _modelGroup;
 
@@ -62,6 +67,7 @@ namespace IsleForge.Pages
             _viewport3D = FindVisualChild<Viewport3D>(this);
             _modelGroup = FindSceneModelGroup(_viewport3D);
 
+            MAXVALUE = MapDataStore.MaxHeightShare;
             MIDVALUE = MapDataStore.MidHeightShare;
             LOWVALUE = MapDataStore.LowHeightShare;
 
@@ -76,6 +82,7 @@ namespace IsleForge.Pages
             _viewport3D = FindVisualChild<Viewport3D>(this);
             _modelGroup = FindSceneModelGroup(_viewport3D);
 
+            MAXVALUE = MapDataStore.MaxHeightShare;
             MIDVALUE = MapDataStore.MidHeightShare;
             LOWVALUE = MapDataStore.LowHeightShare;
 
@@ -85,6 +92,13 @@ namespace IsleForge.Pages
             }
             else
             {
+                //load defaults from settings
+                noiseStrength = App.CurrentSettings.NoiseStrength;
+                noiseScale = App.CurrentSettings.NoiseScale;
+                noiseOctaves = App.CurrentSettings.NoiseOctaves;
+                noiseLacunarity = App.CurrentSettings.NoiseLacunarity;
+
+                UpdateUIFromSaved();
                 LoadDataFromHeightMap();
             }
         }
@@ -106,12 +120,12 @@ namespace IsleForge.Pages
             //start noise application by reseting map
             ResetMeshesToOriginal();
 
-            float strength = HelperExtensions.GetFloatFromTag(this, "NoiseStrength", .1f);
-            float scale = HelperExtensions.GetFloatFromTag(this, "NoiseScale", 0.1f);
-            int octaves = (int)HelperExtensions.GetFloatFromTag(this, "NoiseOctaves", 4f);
-            float lacunarity = HelperExtensions.GetFloatFromTag(this, "NoiseLacunarity", 2f);
+            noiseStrength = HelperExtensions.GetFloatFromTag(this, "NoiseStrength", .5f);
+            noiseScale = HelperExtensions.GetFloatFromTag(this, "NoiseScale", 0.07f);
+            noiseOctaves = (int)HelperExtensions.GetFloatFromTag(this, "NoiseOctaves", 4);
+            noiseLacunarity = HelperExtensions.GetFloatFromTag(this, "NoiseLacunarity", 2f);
 
-            ApplyNoiseToMeshes(strength, scale, octaves, 0.5f, lacunarity);
+            ApplyNoiseToMeshes(noiseStrength, noiseScale, noiseOctaves, 0.5f, noiseLacunarity);
 
             return;
         }
@@ -671,11 +685,11 @@ namespace IsleForge.Pages
 
             //Base, beach, Mid, None, ramp, Top
             //can use fixed colors for known labels:
-            if (label == "Mid") return Colors.LightGreen;
+            if (label == "Mid") return Colors.Green; //Colors.LightGreen;
             if (label == "Base") return Colors.Green;
-            if (label == "ramp") return Colors.Aqua;
-            if (label == "Top") return Colors.ForestGreen;
-            if (label == "none") return Colors.Blue;
+            if (label == "ramp") return Colors.Green; //Colors.Aqua;
+            if (label == "Top") return Colors.Green; //Colors.ForestGreen;
+            if (label == "none") return Colors.Green; //Colors.Blue;
             if (label == "beach") return Colors.Goldenrod;
             if (label == "cliff") return Colors.DarkKhaki;
             //WEIRDLOL
@@ -1095,8 +1109,26 @@ namespace IsleForge.Pages
                 CameraPosition = camera?.Position ?? new Point3D(),
                 CameraLookDirection = camera?.LookDirection ?? new Vector3D(),
                 CameraUpDirection = camera?.UpDirection ?? new Vector3D(0, 1, 0),
-                MeshCreated = meshCreated
+                MeshCreated = meshCreated,
+                NoiseStrength = noiseStrength,
+                NoiseScale = noiseScale,
+                NoiseOctaves = noiseOctaves,
+                NoiseLacunarity = noiseLacunarity
+
             };
+        }
+
+        private void UpdateUIFromSaved()
+        {
+            var NoiseStrengthEntry = HelperExtensions.FindElementByTag<TextBox>(this, "NoiseStrength");
+            var NoiseScaleEntry = HelperExtensions.FindElementByTag<TextBox>(this, "NoiseScale");
+            var NoiseOctavesEntry = HelperExtensions.FindElementByTag<TextBox>(this, "NoiseOctaves");
+            var NoiseLacunarityEntry = HelperExtensions.FindElementByTag<TextBox>(this, "NoiseLacunarity");
+
+            NoiseStrengthEntry.Text = noiseStrength.ToString();
+            NoiseScaleEntry.Text = noiseScale.ToString();
+            NoiseOctavesEntry.Text = noiseOctaves.ToString();
+            NoiseLacunarityEntry.Text = noiseLacunarity.ToString();
         }
 
 
@@ -1106,6 +1138,13 @@ namespace IsleForge.Pages
 
             labeledHeightMap = (LabeledValue[,])state.LabeledHeightMap.Clone();
             meshCreated = state.MeshCreated;
+
+            noiseStrength = state.NoiseStrength;
+            noiseScale = state.NoiseScale;
+            noiseOctaves = state.NoiseOctaves;
+            noiseLacunarity = state.NoiseLacunarity;
+
+            UpdateUIFromSaved();
 
             originalMeshPositions = new Dictionary<string, Point3DCollection>(state.OriginalMeshPositions);
 

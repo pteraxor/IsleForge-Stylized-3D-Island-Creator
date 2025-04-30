@@ -17,6 +17,10 @@ namespace IsleForge.PageStates
         public Vector3D CameraLookDirection { get; set; }
         public Vector3D CameraUpDirection { get; set; }
         public bool MeshCreated { get; set; }
+        public float NoiseStrength { get; set; }
+        public float NoiseScale { get; set; }
+        public int NoiseOctaves { get; set; }
+        public float NoiseLacunarity { get; set; }
     }
 
 }

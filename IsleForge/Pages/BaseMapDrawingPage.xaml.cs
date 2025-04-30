@@ -33,7 +33,7 @@ namespace IsleForge.Pages
 
         private IDrawingTool _activeTool;
 
-        private int _drawingToolSize = 20; //a backup default size
+        private int _drawingToolSize = 30; //a backup default size
         private int _currentLayer = 0;
 
         private readonly Color[] _layerColors = {
@@ -44,7 +44,7 @@ namespace IsleForge.Pages
 
         private Stack<WriteableBitmap> _undoStack = new Stack<WriteableBitmap>();
         private Stack<WriteableBitmap> _redoStack = new Stack<WriteableBitmap>();
-        private const int MaxHistory = 5;
+        private const int MaxHistory = 15;
 
         private string _drawingMode = "Freehand";
         private string _stampShape = "Circle";
@@ -82,6 +82,18 @@ namespace IsleForge.Pages
             }
             else
             {
+                //getting the UI elemented that have settings saved
+                _drawingToolSize = App.CurrentSettings.DefaultToolSize;
+                // Brush size label
+                var brushSizeLabel = HelperExtensions.FindElementByTag<TextBlock>(this, "BrushSizeLabel");
+                if (brushSizeLabel != null)
+                    brushSizeLabel.Text = _drawingToolSize.ToString();
+
+                // Set brush size slider
+                var slider = HelperExtensions.FindElementByTag<Slider>(this, "BrushSizeSlider");
+                if (slider != null)
+                    slider.Value = _drawingToolSize;
+
                 InitBitmap(800, 600);
                 _drawCanvas.Children.Add(new Image { Source = _bitmap });
                 SetDrawingTool(); // Fresh init
@@ -475,10 +487,14 @@ namespace IsleForge.Pages
             var clone = _bitmap.Clone();
 
             _undoStack.Push(clone);
+         
 
-            // Keep undo stack limited in size
-            if (_undoStack.Count > MaxHistory)
-                _undoStack = new Stack<WriteableBitmap>(_undoStack.Reverse().Take(MaxHistory).Reverse());
+            if (_undoStack.Count >= MaxHistory)
+            {
+                var tempList = _undoStack.Reverse().ToList();
+                tempList.RemoveAt(0); // Remove oldest
+                _undoStack = new Stack<WriteableBitmap>(tempList);
+            }
 
             // Clear redo history, as new action breaks forward history
             _redoStack.Clear();
