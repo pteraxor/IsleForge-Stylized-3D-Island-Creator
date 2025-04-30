@@ -93,6 +93,8 @@ namespace IsleForge.Pages
                 TOPHEIGHT = App.CurrentSettings.TopHeight;
                 MIDHEIGHT = App.CurrentSettings.MidHeight;
                 BASEHEIGHT = App.CurrentSettings.BaseHeight;
+                Debug.WriteLine($"Loaded TopHeight from settings: {App.CurrentSettings.TopHeight}");
+
 
                 MapDataStore.MaxHeightShare = TOPHEIGHT;
                 MapDataStore.MidHeightShare = MIDHEIGHT;
@@ -1619,6 +1621,7 @@ namespace IsleForge.Pages
 
         private void SetTextValuesForHeights()
         {
+            Debug.WriteLine("changed UI values");
             var TopHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "TopHeight");
             var MidHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "MidHeight");
             var BaseHeightEntry = HelperExtensions.FindElementByTag<TextBox>(this, "BaseHeight");

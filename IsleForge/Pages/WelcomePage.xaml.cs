@@ -30,7 +30,7 @@ namespace IsleForge.Pages
         }
         private void Settings_Page(object sender, RoutedEventArgs e)
         {
-
+            NavigationService.Navigate(new SettingsManagerPage());
         }
 
     }

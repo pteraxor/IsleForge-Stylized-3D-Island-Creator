@@ -62,6 +62,30 @@ namespace IsleForge.Pages
             this.Loaded += BaseMapDrawingPage_Loaded;
         }
 
+        private void SaveSettings_Click(object sender, RoutedEventArgs e)
+        {
+            var settings = new AppSettings();
+
+            // Heights
+            settings.BaseHeight = HelperExtensions.GetFloatFromTag(this, "BaseHeight", 12f);
+            settings.MidHeight = HelperExtensions.GetFloatFromTag(this, "MidHeight", 22f);
+            settings.TopHeight = HelperExtensions.GetFloatFromTag(this, "TopHeight", 32f);
+
+            // Noise
+            settings.NoiseStrength = HelperExtensions.GetFloatFromTag(this, "NoiseStrength", 0.1f);
+            settings.NoiseScale = HelperExtensions.GetFloatFromTag(this, "NoiseScale", 0.1f);
+            settings.NoiseOctaves = (int)HelperExtensions.GetFloatFromTag(this, "NoiseOctaves", 4f);
+            settings.NoiseLacunarity = HelperExtensions.GetFloatFromTag(this, "NoiseLacunarity", 2.0f);
+
+            // Texture tiling
+            settings.TextureTiling = HelperExtensions.GetFloatFromTag(this, "TextureTiling", 1.0f);
+
+            SettingsManager.Save(settings);
+
+            MessageBox.Show("Settings saved.");
+        }
+
+
         private void BaseMapDrawingPage_Loaded(object sender, RoutedEventArgs e)
         {
             _drawCanvas = HelperExtensions.FindElementByTag<Canvas>(this, "DrawCanvas");

@@ -26,7 +26,7 @@
         <!-- no bottom buttons needed on first page-->
         <!--</local:BaseLayout.FooterContent>-->
 
-        <local:BaseLayout.RightContent >
+        <local:BaseLayout.RightContent>
             <Grid>
                 <Image 
                Source="pack://application:,,,/Resources/logo700shad.png"

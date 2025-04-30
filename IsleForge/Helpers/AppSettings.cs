@@ -8,7 +8,7 @@ namespace IsleForge.Helpers
 {
     public class AppSettings
     {
-        public double TextureTiling { get; set; } = 5;
+        public double TextureTiling { get; set; } = 5; //incorporated
         public int DefaultToolSize { get; set; } = 40; //incorporated
         public float BaseHeight { get; set; } = 12f; //incorporated
         public float MidHeight { get; set; } = 22f; //incorporated

@@ -11,6 +11,8 @@ namespace IsleForge.Helpers
 
     public static class SettingsManager
     {
+        public static AppSettings Current { get; private set; } = new AppSettings();
+
         private static string SettingsPath =>
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json");
 
@@ -19,15 +21,22 @@ namespace IsleForge.Helpers
             if (File.Exists(SettingsPath))
             {
                 string json = File.ReadAllText(SettingsPath);
-                return JsonSerializer.Deserialize<AppSettings>(json);
+                Current = JsonSerializer.Deserialize<AppSettings>(json);
             }
-            return new AppSettings(); // defaults
+            else
+            {
+                Current = new AppSettings(); // defaults
+            }
+
+            return Current;
         }
 
         public static void Save(AppSettings settings)
         {
             var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(SettingsPath, json);
+            Current = settings;
+            App.CurrentSettings = settings;
         }
     }
 
