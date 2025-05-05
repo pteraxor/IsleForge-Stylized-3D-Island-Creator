@@ -132,11 +132,11 @@ namespace IsleForge.Pages
 
         private void ExportMesh_Click(object sender, RoutedEventArgs e)
         {
-            // string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "heightmapGroup.obj");
+             string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "heightmapGroup.obj");
 
-            //ExportModelGroupToObj(_modelGroup, path);
-            string folderPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MeshExports");
-            ExportEachMeshToObj(_modelGroup, folderPath);
+            ExportModelGroupToObj(_modelGroup, path);
+            //string folderPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MeshExports");
+            //ExportEachMeshToObj(_modelGroup, folderPath);
 
             return;
 
@@ -155,28 +155,7 @@ namespace IsleForge.Pages
             Debug.WriteLine($"MAXVALUE: {MAXVALUE}");
         }
 
-        private float GetMaxValue(LabeledValue[,] data)
-        {
-            int width = data.GetLength(0);
-            int height = data.GetLength(1);
-
-            float max = float.MinValue;
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    float current = data[x, y].Value;
-
-                    if (current > max)
-                    {
-                        max = current;
-                    }
-                }
-            }
-
-            return max;
-        }
+        
 
         #endregion
 
@@ -401,16 +380,7 @@ namespace IsleForge.Pages
                         continue;
                     }
 
-                    /*
-                    //Use gradient to decide split direction(pre threshold version)
-                    Vector3D gradient = new Vector3D(
-                        (v10.Value - v00.Value + v11.Value - v01.Value), // x direction (left→right)
-                        0,
-                        (v01.Value - v00.Value + v11.Value - v10.Value)  // z direction (top→bottom)
-                    );
-                    gradient.Normalize();
-                    */
-
+                    
                     //trying threshold version
                     double dx = (v10.Value - v00.Value + v11.Value - v01.Value);
                     double dz = (v01.Value - v00.Value + v11.Value - v10.Value);
@@ -425,11 +395,7 @@ namespace IsleForge.Pages
 
                     string seamKey = "seam_" + string.Join("_", labelSet.OrderBy(l => l));
 
-                    /*
-                    //pre threshold version
-                    if (!seamMeshes.ContainsKey(seamKey))
-                        seamMeshes[seamKey] = new MeshBuilder();
-                    */
+                    
                     //thresh start
                     if (gradientStrength < gradientThreshold)
                     {
@@ -489,164 +455,7 @@ namespace IsleForge.Pages
             return finalMeshes; //old working one            
         }
 
-        private Dictionary<string, MeshGeometry3D> WrapSingleMesh(MeshGeometry3D mesh, string label = "default")
-        {
-            return new Dictionary<string, MeshGeometry3D>
-    {
-        { label, mesh }
-    };
-        }
-
-        private MeshGeometry3D CombineMesh(Dictionary<string, MeshGeometry3D> input)
-        {
-            var builder = new MeshBuilder();
-
-            foreach (var kvp in input)
-            {
-                var mesh = kvp.Value;
-                var name = kvp.Key;
-
-                if (mesh.Positions.Count == 0 || mesh.TriangleIndices.Count == 0)
-                {
-                    Debug.WriteLine($"[CombineMesh] Skipping empty mesh: {name}");
-                    continue;
-                }
-
-                for (int i = 0; i < mesh.TriangleIndices.Count; i += 3)
-                {
-                    if (i + 2 >= mesh.TriangleIndices.Count)
-                    {
-                        Debug.WriteLine($"[CombineMesh] Invalid triangle indices at index {i} in mesh {name}");
-                        continue;
-                    }
-
-                    int i0 = mesh.TriangleIndices[i];
-                    int i1 = mesh.TriangleIndices[i + 1];
-                    int i2 = mesh.TriangleIndices[i + 2];
-
-                    if (i0 >= mesh.Positions.Count || i1 >= mesh.Positions.Count || i2 >= mesh.Positions.Count)
-                    {
-                        Debug.WriteLine($"[CombineMesh] Index out of bounds in mesh {name}: {i0}, {i1}, {i2}");
-                        continue;
-                    }
-
-                    var a = mesh.Positions[i0];
-                    var b = mesh.Positions[i1];
-                    var c = mesh.Positions[i2];
-
-                    builder.AddTriangle(a, b, c);
-                }
-            }
-
-            Debug.WriteLine($"[CombineMesh] Combined {input.Count} meshes into {builder.Mesh.TriangleIndices.Count / 3} triangles.");
-            return builder.Mesh;
-        }
-
-        private Dictionary<string, MeshGeometry3D> CreateMeshesByLabelFirstGood(LabeledValue[,] map)
-        {
-            int width = map.GetLength(0);
-            int height = map.GetLength(1);
-
-            var labelMeshes = new Dictionary<string, MeshBuilder>();
-            var seamMeshes = new Dictionary<string, MeshBuilder>();
-            var uniqueLabels = new HashSet<string>();
-
-            double angleThreshold = 120.0;
-
-            for (int y = 0; y < height - 1; y++)
-            {
-                for (int x = 0; x < width - 1; x++)
-                {
-                    var v00 = map[x, y];
-                    var v10 = map[x + 1, y];
-                    var v01 = map[x, y + 1];
-                    var v11 = map[x + 1, y + 1];
-
-                    if (v00.Value <= 0 || v10.Value <= 0 || v01.Value <= 0 || v11.Value <= 0)
-                        continue;
-
-                    var labels = new[] { v00.Label, v10.Label, v01.Label, v11.Label };
-                    foreach (var label in labels)
-                        uniqueLabels.Add(label);
-
-                    var labelSet = new HashSet<string>(labels);
-
-                    Point3D p00 = new Point3D(x, v00.Value, y);
-                    Point3D p10 = new Point3D(x + 1, v10.Value, y);
-                    Point3D p01 = new Point3D(x, v01.Value, y + 1);
-                    Point3D p11 = new Point3D(x + 1, v11.Value, y + 1);
-
-                    // === Priority 1: "ramp" or "beach" ===
-                    if (labelSet.Contains("ramp") || labelSet.Contains("beach"))
-                    {
-                        string fallbackLabel = GetMostCommonLabel(labels);
-                        if (!labelMeshes.ContainsKey(fallbackLabel))
-                            labelMeshes[fallbackLabel] = new MeshBuilder();
-
-                        var builder = labelMeshes[fallbackLabel];
-                        builder.AddTriangle(p00, p11, p10);
-                        builder.AddTriangle(p00, p01, p11);
-                        continue;
-                    }
-
-                    // === Priority 2: angle > threshold ===
-                    Vector3D normal = CalculateAverageNormal(p00, p11, p10, p01);
-                    normal.Normalize();
-                    Vector3D up = new Vector3D(0, 1, 0);
-                    double dot = Vector3D.DotProduct(normal, up);
-                    dot = Math.Max(-1.0, Math.Min(1.0, dot)); // Clamp
-                    double angleFromUp = Math.Acos(dot) * (180.0 / Math.PI);
-
-                    if (angleFromUp >= angleThreshold)
-                    {
-                        string seamKey = string.Join("_", labelSet.OrderBy(l => l));
-                        if (!seamMeshes.ContainsKey(seamKey))
-                            seamMeshes[seamKey] = new MeshBuilder();
-
-                        var builder = seamMeshes[seamKey];
-                        builder.AddTriangle(p00, p11, p10);
-                        builder.AddTriangle(p00, p01, p11);
-                        continue;
-                    }
-
-                    // === Priority 3: label-based (non-beach/ramp, non-steep)
-                    if (labelSet.Count == 1)
-                    {
-                        string label = labels[0];
-                        if (!labelMeshes.ContainsKey(label))
-                            labelMeshes[label] = new MeshBuilder();
-
-                        var builder = labelMeshes[label];
-                        builder.AddTriangle(p00, p11, p10);
-                        builder.AddTriangle(p00, p01, p11);
-                    }
-                    else
-                    {
-                        string fallbackLabel = GetMostCommonLabel(labels);
-                        if (!labelMeshes.ContainsKey(fallbackLabel))
-                            labelMeshes[fallbackLabel] = new MeshBuilder();
-
-                        var builder = labelMeshes[fallbackLabel];
-                        builder.AddTriangle(p00, p11, p10);
-                        builder.AddTriangle(p00, p01, p11);
-                    }
-                }
-            }
-
-            var finalMeshes = new Dictionary<string, MeshGeometry3D>();
-
-            foreach (var kvp in labelMeshes)
-                finalMeshes[kvp.Key] = kvp.Value.Mesh;
-
-            foreach (var kvp in seamMeshes)
-                finalMeshes["seam_" + kvp.Key] = kvp.Value.Mesh;
-
-            string labelList = string.Join(", ", uniqueLabels.OrderBy(l => l));
-            Debug.WriteLine("Unique labels found in mesh: " + labelList);
-
-            return finalMeshes;
-        }
-
+       
         private string GetMostCommonLabel(string[] labels)
         {
             var counts = new Dictionary<string, int>();
@@ -659,24 +468,6 @@ namespace IsleForge.Pages
 
             // Return the most frequent one
             return counts.OrderByDescending(kv => kv.Value).First().Key;
-        }
-
-
-        private Vector3D CalculateAverageNormal(Point3D p0, Point3D p1, Point3D p2, Point3D p3)
-        {
-            // Triangle 1: p0 → p1 → p2
-            Vector3D n1 = Vector3D.CrossProduct(p1 - p0, p2 - p0);
-            n1.Normalize();
-
-            // Triangle 2: p0 → p2 → p3
-            Vector3D n2 = Vector3D.CrossProduct(p2 - p0, p3 - p0);
-            n2.Normalize();
-
-            Vector3D average = n1 + n2;
-            if (average.Length > 0)
-                average.Normalize();
-
-            return average;
         }
 
 
@@ -861,70 +652,7 @@ namespace IsleForge.Pages
             MessageBox.Show("OBJ exported to:\n" + filePath);
         }
 
-        private void ExportEachMeshToObj(Model3DGroup modelGroup, string outputDirectory)
-        {
-            Directory.CreateDirectory(outputDirectory); // Make sure output dir exists
-
-            for (int modelIndex = 0; modelIndex < modelGroup.Children.Count; modelIndex++)
-            {
-                if (!(modelGroup.Children[modelIndex] is GeometryModel3D geom))
-                    continue;
-
-                if (!(geom.Geometry is MeshGeometry3D mesh))
-                    continue;
-
-                // Try to get label
-                string label = geom.GetValue(FrameworkElement.TagProperty) as string ?? $"mesh_{modelIndex}";
-                string safeLabel = string.Concat(label.Where(c => char.IsLetterOrDigit(c) || c == '_'));
-                string filePath = System.IO.Path.Combine(outputDirectory, $"{safeLabel}.obj");
-
-                using (StreamWriter writer = new StreamWriter(filePath))
-                {
-                    writer.WriteLine($"# Exported OBJ for mesh: {label}");
-
-                    int vertexOffset = 1;
-
-                    // Write vertices
-                    foreach (var pos in mesh.Positions)
-                        writer.WriteLine($"v {pos.X:0.######} {pos.Y:0.######} {pos.Z:0.######}");
-
-                    bool hasNormals = mesh.Normals != null && mesh.Normals.Count == mesh.Positions.Count;
-                    if (hasNormals)
-                    {
-                        foreach (var n in mesh.Normals)
-                            writer.WriteLine($"vn {n.X:0.######} {n.Y:0.######} {n.Z:0.######}");
-                    }
-
-                    bool hasUVs = mesh.TextureCoordinates != null && mesh.TextureCoordinates.Count == mesh.Positions.Count;
-                    if (hasUVs)
-                    {
-                        foreach (var uv in mesh.TextureCoordinates)
-                            writer.WriteLine($"vt {uv.X:0.######} {uv.Y:0.######}");
-                    }
-
-                    // Write faces
-                    for (int i = 0; i < mesh.TriangleIndices.Count; i += 3)
-                    {
-                        int i0 = mesh.TriangleIndices[i] + vertexOffset;
-                        int i1 = mesh.TriangleIndices[i + 1] + vertexOffset;
-                        int i2 = mesh.TriangleIndices[i + 2] + vertexOffset;
-
-                        if (hasNormals && hasUVs)
-                            writer.WriteLine($"f {i0}/{i0}/{i0} {i1}/{i1}/{i1} {i2}/{i2}/{i2}");
-                        else if (hasUVs)
-                            writer.WriteLine($"f {i0}/{i0} {i1}/{i1} {i2}/{i2}");
-                        else if (hasNormals)
-                            writer.WriteLine($"f {i0}//{i0} {i1}//{i1} {i2}//{i2}");
-                        else
-                            writer.WriteLine($"f {i0} {i1} {i2}");
-                    }
-                }
-
-                Debug.WriteLine($"Exported OBJ: {filePath}");
-            }
-
-            MessageBox.Show("All individual OBJ meshes exported.");
-        }
+        
 
 
         #endregion
